@@ -1921,11 +1921,47 @@ function renderMenu(W, H, dpr, time) {
     ctx.fillStyle = 'rgba(255,255,255,0.35)';
     ctx.fillText('Eat your way up the food chain!', W / 2, infoY + 55 * s);
 
+    // Mobile joystick onboarding animation
+    if (IS_MOBILE) {
+        const joyY = H * 0.63;
+        const baseR = 30 * s;
+        const nubR = 12 * s;
+        // Animate nub in a smooth circle
+        const angle = time * 1.5;
+        const reach = 18 * s;
+        const nubX = W / 2 + cos(angle) * reach;
+        const nubY = joyY + sin(angle) * reach;
+
+        // Draw base circle
+        ctx.beginPath();
+        ctx.arc(W / 2, joyY, baseR, 0, TWO_PI);
+        ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+        ctx.lineWidth = 2 * s;
+        ctx.stroke();
+
+        // Draw nub
+        ctx.beginPath();
+        ctx.arc(nubX, nubY, nubR, 0, TWO_PI);
+        ctx.fillStyle = 'rgba(255,255,255,0.30)';
+        ctx.fill();
+
+        // Draw finger dot above nub
+        ctx.beginPath();
+        ctx.arc(nubX, nubY - nubR * 0.3, 5 * s, 0, TWO_PI);
+        ctx.fillStyle = 'rgba(255,255,255,0.50)';
+        ctx.fill();
+
+        // Label
+        ctx.font = `${11 * s}px 'Segoe UI', Helvetica, Arial, sans-serif`;
+        ctx.fillStyle = 'rgba(255,255,255,0.40)';
+        ctx.fillText('Touch & drag anywhere to move', W / 2, joyY + baseR + 18 * s);
+    }
+
     // Start
     const blink = sin(time * 3) > 0 ? 1 : 0.4;
     ctx.font = `bold ${20 * s}px 'Segoe UI', Helvetica, Arial, sans-serif`;
     ctx.fillStyle = colorWithAlpha('#fff', blink);
-    ctx.fillText(IS_MOBILE ? 'Tap to start' : 'Press ENTER or SPACE to start', W / 2, H * 0.72);
+    ctx.fillText(IS_MOBILE ? 'Tap to start' : 'Press ENTER or SPACE to start', W / 2, IS_MOBILE ? H * 0.82 : H * 0.72);
 
     // Credit
     ctx.font = `${11 * s}px 'Segoe UI', Helvetica, Arial, sans-serif`;
