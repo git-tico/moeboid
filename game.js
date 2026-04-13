@@ -337,6 +337,255 @@ class SoundManager {
 const sound = new SoundManager();
 
 // ============================================================
+// SECTION 3b: PROCEDURAL MUSIC
+// ============================================================
+class MusicManager {
+    constructor() {
+        this.playing = false;
+        this.ctx = null;
+        this.masterGain = null;
+        this.layers = {};
+        this.currentMood = 'menu'; // menu, playing, gameover
+        this.targetLevel = 1;
+        this.intensity = 0; // 0-1, ramps toward target
+    }
+
+    init(audioCtx, masterGain) {
+        if (this.playing) return;
+        this.ctx = audioCtx;
+        // Separate gain for music (lower than SFX)
+        this.masterGain = this.ctx.createGain();
+        this.masterGain.gain.value = 0.18;
+        this.masterGain.connect(masterGain);
+    }
+
+    start() {
+        if (this.playing || !this.ctx) return;
+        this.playing = true;
+        this._buildLayers();
+    }
+
+    _buildLayers() {
+        const ctx = this.ctx;
+        const now = ctx.currentTime;
+
+        // ── Layer 1: Deep drone pad (C2 ~65Hz) ──
+        const drone = ctx.createOscillator();
+        const droneGain = ctx.createGain();
+        const droneFilter = ctx.createBiquadFilter();
+        drone.type = 'triangle';
+        drone.frequency.value = 65.41; // C2
+        droneFilter.type = 'lowpass';
+        droneFilter.frequency.value = 200;
+        droneFilter.Q.value = 1;
+        droneGain.gain.value = 0.35;
+        drone.connect(droneFilter);
+        droneFilter.connect(droneGain);
+        droneGain.connect(this.masterGain);
+        drone.start(now);
+
+        // ── Layer 2: Slow evolving pad (5th above, G2) ──
+        const pad = ctx.createOscillator();
+        const padGain = ctx.createGain();
+        const padFilter = ctx.createBiquadFilter();
+        pad.type = 'sine';
+        pad.frequency.value = 98; // G2
+        padFilter.type = 'lowpass';
+        padFilter.frequency.value = 400;
+        padGain.gain.value = 0.2;
+        pad.connect(padFilter);
+        padFilter.connect(padGain);
+        padGain.connect(this.masterGain);
+        pad.start(now);
+
+        // ── Layer 3: High shimmer (ethereal harmonics) ──
+        const shimmer = ctx.createOscillator();
+        const shimmerGain = ctx.createGain();
+        const shimmerFilter = ctx.createBiquadFilter();
+        shimmer.type = 'sine';
+        shimmer.frequency.value = 523.25; // C5
+        shimmerFilter.type = 'bandpass';
+        shimmerFilter.frequency.value = 600;
+        shimmerFilter.Q.value = 3;
+        shimmerGain.gain.value = 0;
+        shimmer.connect(shimmerFilter);
+        shimmerFilter.connect(shimmerGain);
+        shimmerGain.connect(this.masterGain);
+        shimmer.start(now);
+
+        // ── Layer 4: Sub pulse (rhythmic heartbeat) ──
+        const pulse = ctx.createOscillator();
+        const pulseGain = ctx.createGain();
+        const pulseShaper = ctx.createWaveShaper();
+        pulse.type = 'sine';
+        pulse.frequency.value = 0.4; // LFO: 0.4 Hz = pulse every 2.5s
+        pulseGain.gain.value = 0;
+        // Use LFO to modulate a sub-bass
+        const sub = ctx.createOscillator();
+        const subGain = ctx.createGain();
+        sub.type = 'sine';
+        sub.frequency.value = 55; // A1
+        subGain.gain.value = 0;
+        sub.connect(subGain);
+        subGain.connect(this.masterGain);
+        sub.start(now);
+
+        // ── Layer 5: Tension oscillator (appears at higher levels) ──
+        const tension = ctx.createOscillator();
+        const tensionGain = ctx.createGain();
+        const tensionFilter = ctx.createBiquadFilter();
+        tension.type = 'sawtooth';
+        tension.frequency.value = 130.81; // C3
+        tensionFilter.type = 'lowpass';
+        tensionFilter.frequency.value = 150;
+        tensionFilter.Q.value = 5;
+        tensionGain.gain.value = 0;
+        tension.connect(tensionFilter);
+        tensionFilter.connect(tensionGain);
+        tensionGain.connect(this.masterGain);
+        tension.start(now);
+
+        // ── Noise layer (ambient hiss/atmosphere) ──
+        const noiseSize = ctx.sampleRate * 2;
+        const noiseBuffer = ctx.createBuffer(1, noiseSize, ctx.sampleRate);
+        const noiseData = noiseBuffer.getChannelData(0);
+        for (let i = 0; i < noiseSize; i++) {
+            noiseData[i] = (Math.random() * 2 - 1) * 0.015;
+        }
+        const noise = ctx.createBufferSource();
+        noise.buffer = noiseBuffer;
+        noise.loop = true;
+        const noiseGain = ctx.createGain();
+        const noiseFilter = ctx.createBiquadFilter();
+        noiseFilter.type = 'bandpass';
+        noiseFilter.frequency.value = 800;
+        noiseFilter.Q.value = 0.5;
+        noiseGain.gain.value = 0.5;
+        noise.connect(noiseFilter);
+        noiseFilter.connect(noiseGain);
+        noiseGain.connect(this.masterGain);
+        noise.start(now);
+
+        this.layers = {
+            drone: { osc: drone, gain: droneGain, filter: droneFilter },
+            pad: { osc: pad, gain: padGain, filter: padFilter },
+            shimmer: { osc: shimmer, gain: shimmerGain, filter: shimmerFilter },
+            sub: { osc: sub, gain: subGain },
+            tension: { osc: tension, gain: tensionGain, filter: tensionFilter },
+            noise: { source: noise, gain: noiseGain, filter: noiseFilter },
+            pulse: { osc: pulse, gain: pulseGain },
+        };
+
+        // Start the LFO modulation loop
+        this._lfoLoop();
+    }
+
+    _lfoLoop() {
+        if (!this.playing || !this.ctx) return;
+        const ctx = this.ctx;
+        const now = ctx.currentTime;
+
+        // Sub pulse: rhythmic volume swell
+        if (this.layers.sub) {
+            const rate = this.currentMood === 'playing' ? 0.6 + this.intensity * 0.4 : 0.3;
+            const vol = this.currentMood === 'playing' ? 0.08 + this.intensity * 0.12 : 0.03;
+            const t = now * rate * Math.PI * 2;
+            const pulse = Math.max(0, Math.sin(t)) * vol;
+            this.layers.sub.gain.gain.setTargetAtTime(pulse, now, 0.05);
+        }
+
+        // Schedule next tick
+        setTimeout(() => this._lfoLoop(), 80);
+    }
+
+    setMood(mood, level) {
+        if (!this.playing || !this.ctx) return;
+        this.currentMood = mood;
+        this.targetLevel = level || 1;
+        const now = this.ctx.currentTime;
+        const ramp = 2.0; // seconds to transition
+
+        const L = this.layers;
+        if (!L.drone) return;
+
+        if (mood === 'menu') {
+            // Calm, spacious
+            L.drone.gain.gain.setTargetAtTime(0.3, now, ramp);
+            L.drone.filter.frequency.setTargetAtTime(180, now, ramp);
+            L.pad.gain.gain.setTargetAtTime(0.15, now, ramp);
+            L.pad.osc.frequency.setTargetAtTime(98, now, ramp);
+            L.shimmer.gain.gain.setTargetAtTime(0.06, now, ramp);
+            L.shimmer.osc.frequency.setTargetAtTime(523, now, ramp);
+            L.tension.gain.gain.setTargetAtTime(0, now, ramp);
+            L.noise.gain.gain.setTargetAtTime(0.4, now, ramp);
+            this.intensity = 0;
+        } else if (mood === 'playing') {
+            // Intensity scales with level 1-7
+            const t = clamp((level - 1) / 6, 0, 1);
+            this.intensity = t;
+
+            // Drone gets richer at higher levels
+            L.drone.gain.gain.setTargetAtTime(0.25 + t * 0.15, now, ramp);
+            L.drone.filter.frequency.setTargetAtTime(200 + t * 300, now, ramp);
+
+            // Pad shifts up in pitch as player grows
+            const padFreqs = [98, 110, 123.47, 130.81, 146.83, 164.81, 196];
+            L.pad.gain.gain.setTargetAtTime(0.15 + t * 0.1, now, ramp);
+            L.pad.osc.frequency.setTargetAtTime(padFreqs[min(level-1, 6)], now, ramp);
+
+            // Shimmer appears mid-game
+            L.shimmer.gain.gain.setTargetAtTime(t > 0.3 ? 0.04 + t * 0.06 : 0, now, ramp);
+            const shimmerFreqs = [523, 587, 659, 698, 784, 880, 1047];
+            L.shimmer.osc.frequency.setTargetAtTime(shimmerFreqs[min(level-1, 6)], now, ramp);
+
+            // Tension builds from level 4+
+            L.tension.gain.gain.setTargetAtTime(t > 0.4 ? (t - 0.4) * 0.15 : 0, now, ramp);
+            L.tension.filter.frequency.setTargetAtTime(150 + t * 400, now, ramp);
+
+            // Noise gets slightly brighter
+            L.noise.gain.gain.setTargetAtTime(0.3 + t * 0.3, now, ramp);
+            L.noise.filter.frequency.setTargetAtTime(800 + t * 600, now, ramp);
+
+        } else if (mood === 'gameover') {
+            // Everything dims, detuned, sad
+            L.drone.gain.gain.setTargetAtTime(0.2, now, ramp);
+            L.drone.filter.frequency.setTargetAtTime(120, now, ramp);
+            L.drone.osc.frequency.setTargetAtTime(61.74, now, ramp); // Eb2 — minor
+            L.pad.gain.gain.setTargetAtTime(0.1, now, ramp);
+            L.pad.osc.frequency.setTargetAtTime(92.5, now, ramp); // Gb2
+            L.shimmer.gain.gain.setTargetAtTime(0.03, now, ramp);
+            L.shimmer.osc.frequency.setTargetAtTime(466, now, ramp); // Bb4
+            L.tension.gain.gain.setTargetAtTime(0, now, ramp * 0.5);
+            L.noise.gain.gain.setTargetAtTime(0.15, now, ramp);
+            this.intensity = 0;
+
+        } else if (mood === 'paused') {
+            // Muted, just drone + noise
+            L.drone.gain.gain.setTargetAtTime(0.15, now, ramp * 0.5);
+            L.pad.gain.gain.setTargetAtTime(0.05, now, ramp * 0.5);
+            L.shimmer.gain.gain.setTargetAtTime(0, now, ramp * 0.5);
+            L.tension.gain.gain.setTargetAtTime(0, now, ramp * 0.5);
+            L.sub.gain.gain.setTargetAtTime(0, now, ramp * 0.5);
+            L.noise.gain.gain.setTargetAtTime(0.2, now, ramp * 0.5);
+        }
+    }
+
+    // Called from game loop to keep music evolving
+    update(state, level) {
+        if (!this.playing) return;
+        const mood = state === 'MENU' || state === 'ONBOARDING' ? 'menu' :
+                     state === 'PLAYING' || state === 'DYING' ? 'playing' :
+                     state === 'PAUSED' ? 'paused' :
+                     state === 'GAME_OVER' ? 'gameover' : 'menu';
+        if (mood !== this.currentMood || (mood === 'playing' && level !== this.targetLevel)) {
+            this.setMood(mood, level);
+        }
+    }
+}
+
+const music = new MusicManager();
+
+// ============================================================
 // SECTION 4: PARTICLE SYSTEM
 // ============================================================
 class Particle {
@@ -1256,6 +1505,11 @@ function startGame() {
     sound.init();
     sound.resume();
     sound.playMenuSelect();
+    // Start music if not already
+    if (sound.initialized && !music.playing) {
+        music.init(sound.ctx, sound.masterGain);
+        music.start();
+    }
 
     game.state = 'PLAYING';
     game.score = 0;
@@ -1430,6 +1684,13 @@ function update(dt) {
                 a.constrainToDish(240);
             }
             if (input.isPressed('Enter') || input.isPressed('Space') || input.consumeTap()) {
+                // Init audio on first user gesture
+                sound.init();
+                sound.resume();
+                if (sound.initialized && !music.playing) {
+                    music.init(sound.ctx, sound.masterGain);
+                    music.start();
+                }
                 if (!localStorage.getItem('moeboid_onboarded')) {
                     game.state = 'ONBOARDING';
                     game.onboardingCard = 0;
@@ -2632,6 +2893,9 @@ function gameLoop(timestamp) {
     }
 
     render(gameTime);
+
+    // Update music mood
+    music.update(game.state, game.player ? game.player.level : 1);
 }
 
 requestAnimationFrame(gameLoop);
