@@ -85,6 +85,26 @@ const TUNING = {
     eatSpeedDuration: 0.3,
 };
 
+// UI Theme (Bioluminescent Lab design system from Stitch)
+const THEME = {
+    primary: '#69fea5',
+    primaryDim: '#59ef98',
+    primaryCtr: '#14c16f',
+    secondary: '#75f6f6',
+    surface: '#050f1a',
+    surfaceCtr: '#0d1b28',
+    surfaceHi: '#12212f',
+    surfaceHighest: '#172737',
+    onSurface: '#e1ecfc',
+    onSurfaceVar: '#a1acbb',
+    outline: '#6c7684',
+    error: '#ff716c',
+    errorDim: '#d7383b',
+    fontHeadline: "'Space Grotesk', sans-serif",
+    fontBody: "'Inter', sans-serif",
+    fontLabel: "'Manrope', sans-serif",
+};
+
 // Player radius at each level (index = level, 1-7)
 const PLAYER_RADII = [0, 18, 22, 28, 36, 48, 64, 86];
 
@@ -1210,6 +1230,7 @@ const game = {
     totalEaten: 0,
     levelUpFlashTimer: 0,
     levelUpFlashLevel: 0,
+    onboardingCard: 0,
 };
 
 // Decorative menu amoebas
@@ -1409,7 +1430,31 @@ function update(dt) {
                 a.constrainToDish(240);
             }
             if (input.isPressed('Enter') || input.isPressed('Space') || input.consumeTap()) {
-                startGame();
+                if (!localStorage.getItem('moeboid_onboarded')) {
+                    game.state = 'ONBOARDING';
+                    game.onboardingCard = 0;
+                    input.keys['Enter'] = false;
+                    input.keys['Space'] = false;
+                } else {
+                    startGame();
+                }
+            }
+            break;
+
+        case 'ONBOARDING':
+            // Debounce: wait for key release before accepting next press
+            if (!input.isPressed('Enter') && !input.isPressed('Space')) {
+                game._onboardReady = true;
+            }
+            if (game._onboardReady && (input.isPressed('Enter') || input.isPressed('Space') || input.consumeTap())) {
+                input.keys['Enter'] = false;
+                input.keys['Space'] = false;
+                game._onboardReady = false;
+                game.onboardingCard++;
+                if (game.onboardingCard >= 3) {
+                    localStorage.setItem('moeboid_onboarded', '1');
+                    startGame();
+                }
             }
             break;
 
@@ -1520,11 +1565,17 @@ function render(time) {
     const H = canvas.height;
     const dpr = window.devicePixelRatio || 1;
 
-    ctx.fillStyle = '#000';
+    ctx.fillStyle = THEME.surface;
     ctx.fillRect(0, 0, W, H);
+    renderBackground(W, H, dpr, time);
 
     if (game.state === 'MENU') {
         renderMenu(W, H, dpr, time);
+        return;
+    }
+
+    if (game.state === 'ONBOARDING') {
+        renderOnboarding(W, H, dpr, time);
         return;
     }
 
@@ -1644,88 +1695,178 @@ function drawAmbientSpecs(time, dishRadius) {
     }
 }
 
+// ---- BACKGROUND (vignette, viewfinder, metadata) ----
+function renderBackground(W, H, dpr, time) {
+    const s = dpr;
+    // Vignette
+    const vg = ctx.createRadialGradient(W/2, H/2, min(W,H)*0.25, W/2, H/2, max(W,H)*0.7);
+    vg.addColorStop(0, 'rgba(0,0,0,0)');
+    vg.addColorStop(1, 'rgba(0,0,0,0.65)');
+    ctx.fillStyle = vg;
+    ctx.fillRect(0,0,W,H);
+
+    // Viewfinder corners
+    const cLen = 20*s, cOff = 16*s;
+    ctx.strokeStyle = colorWithAlpha(THEME.secondary, 0.2);
+    ctx.lineWidth = 1.5*s;
+    // top-left
+    ctx.beginPath(); ctx.moveTo(cOff, cOff+cLen); ctx.lineTo(cOff, cOff); ctx.lineTo(cOff+cLen, cOff); ctx.stroke();
+    // top-right
+    ctx.beginPath(); ctx.moveTo(W-cOff-cLen, cOff); ctx.lineTo(W-cOff, cOff); ctx.lineTo(W-cOff, cOff+cLen); ctx.stroke();
+    // bottom-left
+    ctx.beginPath(); ctx.moveTo(cOff, H-cOff-cLen); ctx.lineTo(cOff, H-cOff); ctx.lineTo(cOff+cLen, H-cOff); ctx.stroke();
+    // bottom-right
+    ctx.beginPath(); ctx.moveTo(W-cOff-cLen, H-cOff); ctx.lineTo(W-cOff, H-cOff); ctx.lineTo(W-cOff, H-cOff-cLen); ctx.stroke();
+}
+
+// ---- GLASS PANEL helper ----
+function drawGlassPanel(x, y, w, h, r) {
+    ctx.fillStyle = 'rgba(13,27,40,0.6)';
+    roundRect(ctx, x, y, w, h, r || 6);
+    ctx.fill();
+}
+
+// ---- GRADIENT BUTTON helper ----
+function drawButton(cx, cy, text, s, wide) {
+    const tw = ctx.measureText(text).width;
+    const bw = (wide || tw + 48*s);
+    const bh = 44*s;
+    const bx = cx - bw/2, by = cy - bh/2;
+    const grad = ctx.createLinearGradient(bx, by, bx+bw, by+bh);
+    grad.addColorStop(0, THEME.primaryDim);
+    grad.addColorStop(1, THEME.primaryCtr);
+    ctx.fillStyle = grad;
+    roundRect(ctx, bx, by, bw, bh, 6*s);
+    ctx.fill();
+    // glow
+    ctx.shadowBlur = 20*s;
+    ctx.shadowColor = colorWithAlpha(THEME.primary, 0.35);
+    ctx.fillStyle = grad;
+    roundRect(ctx, bx, by, bw, bh, 6*s);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    // text
+    ctx.fillStyle = '#003218';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `700 ${14*s}px ${THEME.fontHeadline}`;
+    ctx.fillText(text, cx, cy);
+}
+
 function renderHUD(W, H, dpr, time) {
     const s = dpr;
     ctx.save();
-
-    // Score - top left
-    ctx.font = `bold ${20 * s}px 'Segoe UI', Helvetica, Arial, sans-serif`;
-    ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    ctx.fillStyle = 'rgba(255,255,255,0.9)';
-    ctx.shadowBlur = 8 * s;
-    ctx.shadowColor = 'rgba(68,221,136,0.5)';
-    ctx.fillText(`Score: ${game.score.toLocaleString()}`, 20 * s, 20 * s);
-    ctx.shadowBlur = 0;
 
-    // Level - top right
+    // ── Top-left: Score ──
+    ctx.textAlign = 'left';
+    ctx.font = `500 ${9*s}px ${THEME.fontLabel}`;
+    ctx.fillStyle = colorWithAlpha(THEME.secondary, 0.5);
+    ctx.fillText('DATA POINTS', 18*s, 16*s);
+    ctx.font = `700 ${26*s}px ${THEME.fontHeadline}`;
+    ctx.fillStyle = THEME.onSurface;
+    ctx.fillText(game.score.toLocaleString(), 18*s, 28*s);
+    ctx.font = `500 ${12*s}px ${THEME.fontLabel}`;
+    ctx.fillStyle = colorWithAlpha(THEME.primary, 0.7);
+    ctx.fillText(' PTS', 18*s + ctx.measureText(game.score.toLocaleString()).width + 2*s, 36*s);
+
+    // ── Top-center: Level ──
+    const specName = game.player.level <= 8 ? getSpecies(min(game.player.level, 8)).name.toUpperCase() : 'TITAN';
+    const lvlText = `LV.${game.player.level} ${specName}`;
+    ctx.textAlign = 'center';
+    ctx.font = `italic 700 ${15*s}px ${THEME.fontHeadline}`;
+    ctx.fillStyle = THEME.primary;
+    const lvlW = ctx.measureText(lvlText).width + 24*s;
+    // box
+    ctx.strokeStyle = colorWithAlpha(THEME.primary, 0.3);
+    ctx.lineWidth = 1;
+    const lvlBx = W/2 - lvlW/2, lvlBy = 14*s;
+    roundRect(ctx, lvlBx, lvlBy, lvlW, 26*s, 3*s);
+    ctx.stroke();
+    ctx.fillStyle = colorWithAlpha(THEME.primary, 0.05);
+    roundRect(ctx, lvlBx, lvlBy, lvlW, 26*s, 3*s);
+    ctx.fill();
+    ctx.fillStyle = THEME.primary;
+    ctx.fillText(lvlText, W/2, 17*s);
+    // decorative line
+    const lineW = 50*s;
+    const lineGrad = ctx.createLinearGradient(W/2-lineW, 0, W/2+lineW, 0);
+    lineGrad.addColorStop(0, 'rgba(105,254,165,0)');
+    lineGrad.addColorStop(0.5, 'rgba(105,254,165,0.35)');
+    lineGrad.addColorStop(1, 'rgba(105,254,165,0)');
+    ctx.fillStyle = lineGrad;
+    ctx.fillRect(W/2-lineW, 42*s, lineW*2, 1*s);
+
+    // ── Top-right: Predator warning ──
     ctx.textAlign = 'right';
-    ctx.fillStyle = 'rgba(255,255,255,0.85)';
-    ctx.font = `bold ${18 * s}px 'Segoe UI', Helvetica, Arial, sans-serif`;
-    ctx.fillText(`Level ${game.player.level}`, (W / dpr - 20) * s, 20 * s);
-
-    // Predator indicator - top right with colored circle preview
     if (game.player.level < 7) {
         const predatorSpec = getSpecies(game.player.level + 1);
         if (predatorSpec) {
-            const indicatorX = (W / dpr - 20) * s;
-            const indicatorY = 50 * s;
-
-            // Label
-            ctx.font = `${11 * s}px 'Segoe UI', Helvetica, Arial, sans-serif`;
-            ctx.fillStyle = 'rgba(255,100,100,0.7)';
-            ctx.fillText('AVOID:', indicatorX - 22 * s, indicatorY);
-
-            // Small colored circle showing the predator
-            const circleR = 9 * s;
-            const circleX = indicatorX - 10 * s;
-            const circleY = indicatorY + 20 * s;
-            ctx.beginPath();
-            ctx.arc(circleX, circleY, circleR, 0, TWO_PI);
-            const pGrad = ctx.createRadialGradient(circleX, circleY, 0, circleX, circleY, circleR);
-            pGrad.addColorStop(0, predatorSpec.colors.light);
-            pGrad.addColorStop(1, predatorSpec.colors.dark);
-            ctx.fillStyle = pGrad;
+            const rx = W - 18*s;
+            ctx.font = `500 ${9*s}px ${THEME.fontLabel}`;
+            ctx.fillStyle = colorWithAlpha(THEME.error, 0.6);
+            ctx.fillText('HAZARD WARNING', rx, 16*s);
+            // warning box
+            const warnText = `AVOID: ${predatorSpec.name.toLowerCase()}`;
+            ctx.font = `700 ${13*s}px ${THEME.fontHeadline}`;
+            const warnW = ctx.measureText(warnText).width + 36*s;
+            const warnBx = rx - warnW, warnBy = 30*s;
+            ctx.fillStyle = colorWithAlpha(THEME.error, 0.08);
+            roundRect(ctx, warnBx, warnBy, warnW, 24*s, 3*s);
             ctx.fill();
-            ctx.strokeStyle = 'rgba(255,60,60,0.5)';
-            ctx.lineWidth = 2;
-            ctx.stroke();
-
-            // Name
-            ctx.fillStyle = colorWithAlpha(predatorSpec.colors.base, 0.8);
-            ctx.font = `bold ${12 * s}px 'Segoe UI', Helvetica, Arial, sans-serif`;
-            ctx.fillText(predatorSpec.name, circleX - circleR - 6 * s, circleY + 4 * s);
+            // red right border
+            ctx.fillStyle = colorWithAlpha(THEME.error, 0.5);
+            ctx.fillRect(rx - 2*s, warnBy, 2*s, 24*s);
+            // warning icon (triangle)
+            ctx.fillStyle = colorWithAlpha(THEME.error, 0.7 + 0.3*sin(time*4));
+            ctx.font = `700 ${13*s}px ${THEME.fontHeadline}`;
+            ctx.textAlign = 'left';
+            ctx.fillText('⚠', warnBx + 8*s, 33*s);
+            ctx.textAlign = 'right';
+            ctx.fillStyle = THEME.onSurface;
+            ctx.fillText(warnText, rx - 6*s, 33*s);
         }
     } else {
-        ctx.font = `${12 * s}px 'Segoe UI', Helvetica, Arial, sans-serif`;
-        ctx.fillStyle = 'rgba(68,255,120,0.6)';
-        ctx.fillText('APEX PREDATOR', (W / dpr - 20) * s, 50 * s);
+        ctx.font = `700 ${13*s}px ${THEME.fontHeadline}`;
+        ctx.fillStyle = colorWithAlpha(THEME.primary, 0.7);
+        ctx.fillText('⬢ APEX PREDATOR', W - 18*s, 30*s);
     }
 
-    // Lives - bottom left
-    ctx.textAlign = 'left';
+    // ── Bottom-left: Lives ──
     for (let i = 0; i < CONFIG.START_LIVES; i++) {
-        const lx = (25 + i * 28) * s;
-        const ly = (H / dpr - 35) * s;
-        const lr = 8 * s;
-        ctx.beginPath();
-        ctx.arc(lx, ly, lr, 0, TWO_PI);
-        ctx.fillStyle = i < game.lives ? PLAYER_COLORS.base : 'rgba(80,80,80,0.5)';
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(255,255,255,0.2)';
-        ctx.lineWidth = 1;
-        ctx.stroke();
+        const lx = (22 + i*30)*s;
+        const ly = H - 80*s;
+        const lr = 10*s;
+        ctx.beginPath(); ctx.arc(lx, ly, lr, 0, TWO_PI);
+        if (i < game.lives) {
+            ctx.fillStyle = colorWithAlpha(THEME.primary, 0.12);
+            ctx.fill();
+            ctx.strokeStyle = colorWithAlpha(THEME.primary, 0.4);
+            ctx.lineWidth = 1.5*s;
+            ctx.stroke();
+            ctx.shadowBlur = 8*s;
+            ctx.shadowColor = colorWithAlpha(THEME.primary, 0.3);
+            ctx.beginPath(); ctx.arc(lx, ly, 4*s, 0, TWO_PI);
+            ctx.fillStyle = THEME.primary;
+            ctx.fill();
+            ctx.shadowBlur = 0;
+        } else {
+            ctx.fillStyle = colorWithAlpha(THEME.outline, 0.15);
+            ctx.fill();
+            ctx.strokeStyle = colorWithAlpha(THEME.outline, 0.2);
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        }
     }
 
-    // XP Bar - bottom center
+    // ── Bottom-left: XP Bar ──
     renderXPBar(W, H, dpr);
 
-    // Mute indicator
+    // ── Mute indicator ──
     if (sound.muted) {
         ctx.textAlign = 'right';
-        ctx.font = `${12 * s}px 'Segoe UI', Helvetica, Arial, sans-serif`;
-        ctx.fillStyle = 'rgba(255,255,255,0.4)';
-        ctx.fillText('MUTED [M]', (W / dpr - 20) * s, (H / dpr - 28) * s);
+        ctx.font = `500 ${10*s}px ${THEME.fontLabel}`;
+        ctx.fillStyle = colorWithAlpha(THEME.onSurfaceVar, 0.5);
+        ctx.fillText('🔇 MUTED', W - 18*s, H - 18*s);
     }
 
     ctx.restore();
@@ -1733,47 +1874,46 @@ function renderHUD(W, H, dpr, time) {
 
 function renderXPBar(W, H, dpr) {
     const s = dpr;
-    const barWidth = 200 * s;
-    const barHeight = 8 * s;
-    const barX = (W - barWidth) / 2;
-    const barY = H - 22 * s;
+    const barWidth = min(220*s, W*0.5);
+    const barHeight = 7*s;
+    const barX = 18*s;
+    const barY = H - 32*s;
+
+    // Label
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    ctx.font = `500 ${9*s}px ${THEME.fontLabel}`;
+    ctx.fillStyle = colorWithAlpha(THEME.primary, 0.6);
+    ctx.fillText('CELLULAR EVOLUTION', barX, barY - 16*s);
+
+    // XP numbers on right of bar
+    ctx.textAlign = 'right';
+    ctx.fillStyle = colorWithAlpha(THEME.primaryDim, 0.8);
+    ctx.font = `500 ${10*s}px ${THEME.fontLabel}`;
+    if (game.player.level < 7) {
+        ctx.fillText(`${game.player.xp} / ${game.player.xpToNext}`, barX + barWidth, barY - 16*s);
+    } else {
+        ctx.fillStyle = colorWithAlpha(THEME.primary, 0.7);
+        ctx.fillText('MAX LEVEL', barX + barWidth, barY - 16*s);
+    }
 
     // Background
-    ctx.fillStyle = 'rgba(255,255,255,0.1)';
-    roundRect(ctx, barX, barY, barWidth, barHeight, 4 * s);
+    ctx.fillStyle = THEME.surfaceHighest;
+    roundRect(ctx, barX, barY, barWidth, barHeight, 2*s);
     ctx.fill();
 
     // Fill
     const progress = game.player.xpProgress;
     if (progress > 0) {
         const grad = ctx.createLinearGradient(barX, 0, barX + barWidth, 0);
-        grad.addColorStop(0, '#44dd88');
-        grad.addColorStop(1, '#88ffbb');
+        grad.addColorStop(0, THEME.primaryCtr);
+        grad.addColorStop(1, THEME.primary);
         ctx.fillStyle = grad;
-        roundRect(ctx, barX, barY, barWidth * progress, barHeight, 4 * s);
+        roundRect(ctx, barX, barY, barWidth * progress, barHeight, 2*s);
         ctx.fill();
-    }
-
-    // Border
-    ctx.strokeStyle = 'rgba(255,255,255,0.2)';
-    ctx.lineWidth = 1;
-    roundRect(ctx, barX, barY, barWidth, barHeight, 4 * s);
-    ctx.stroke();
-
-    // XP text
-    if (game.player.level < 7) {
-        ctx.font = `${11 * s}px 'Segoe UI', Helvetica, Arial, sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.fillStyle = 'rgba(255,255,255,0.5)';
-        ctx.fillText(
-            `XP: ${game.player.xp} / ${game.player.xpToNext}`,
-            W / 2, barY - 4 * s
-        );
-    } else {
-        ctx.font = `${11 * s}px 'Segoe UI', Helvetica, Arial, sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.fillStyle = 'rgba(68,255,120,0.6)';
-        ctx.fillText('MAX LEVEL', W / 2, barY - 4 * s);
+        // leading edge pulse
+        const pulseX = barX + barWidth*progress;
+        ctx.fillStyle = 'rgba(255,255,255,0.25)';
+        ctx.fillRect(pulseX - 3*s, barY, 3*s, barHeight);
     }
 }
 
@@ -1792,51 +1932,63 @@ function roundRect(ctx, x, y, w, h, r) {
     ctx.closePath();
 }
 
-function renderMinimap(W, H, dpr) {
+function renderMinimap(W, H, dpr, time) {
     const s = dpr;
-    const mapRadius = 50 * s;
-    const cx = W - mapRadius - 15 * s;
-    const cy = H - mapRadius - 50 * s;
+    const mapRadius = 50*s;
+    const cx = W - mapRadius - 18*s;
+    const cy = H - mapRadius - 55*s;
     const mapScale = mapRadius / game.dishRadius;
 
     ctx.save();
-    ctx.globalAlpha = 0.3;
-
-    ctx.beginPath();
-    ctx.arc(cx, cy, mapRadius, 0, TWO_PI);
-    ctx.fillStyle = '#0a1520';
+    // Glass background
+    ctx.beginPath(); ctx.arc(cx, cy, mapRadius+3*s, 0, TWO_PI);
+    ctx.fillStyle = 'rgba(13,27,40,0.5)';
     ctx.fill();
-    ctx.strokeStyle = DISH_COLORS.rim;
+
+    ctx.beginPath(); ctx.arc(cx, cy, mapRadius, 0, TWO_PI);
+    ctx.fillStyle = THEME.surfaceCtr;
+    ctx.fill();
+    ctx.strokeStyle = colorWithAlpha(THEME.secondary, 0.2);
     ctx.lineWidth = 1;
     ctx.stroke();
 
-    ctx.globalAlpha = 0.6;
+    // sweep line
+    ctx.save();
+    ctx.beginPath(); ctx.arc(cx, cy, mapRadius, 0, TWO_PI); ctx.clip();
+    const sweepAngle = time * 0.8;
+    const sweepGrad = ctx.createConicGradient(sweepAngle, cx, cy);
+    sweepGrad.addColorStop(0, 'rgba(105,254,165,0.08)');
+    sweepGrad.addColorStop(0.15, 'rgba(105,254,165,0)');
+    sweepGrad.addColorStop(1, 'rgba(105,254,165,0)');
+    ctx.fillStyle = sweepGrad;
+    ctx.fillRect(cx-mapRadius, cy-mapRadius, mapRadius*2, mapRadius*2);
+    ctx.restore();
 
+    ctx.globalAlpha = 0.6;
     for (const a of game.amoebas) {
         if (!a.alive) continue;
-        const mx = cx + a.x * mapScale;
-        const my = cy + a.y * mapScale;
-        const mr = max(1.5, a.radius * mapScale);
-
-        if (a.speciesLevel <= game.player.level) {
-            ctx.fillStyle = '#44ff88';
-        } else if (a.speciesLevel === game.player.level + 1) {
-            ctx.fillStyle = '#ff4444';
-        } else {
-            ctx.fillStyle = '#888';
-        }
-        ctx.beginPath();
-        ctx.arc(mx, my, mr, 0, TWO_PI);
-        ctx.fill();
+        const mx = cx + a.x*mapScale;
+        const my = cy + a.y*mapScale;
+        const mr = max(1.5, a.radius*mapScale);
+        ctx.fillStyle = a.speciesLevel <= game.player.level ? THEME.primary :
+                        a.speciesLevel === game.player.level+1 ? THEME.error : THEME.outline;
+        ctx.beginPath(); ctx.arc(mx, my, mr, 0, TWO_PI); ctx.fill();
     }
+    ctx.globalAlpha = 1;
 
-    // Player
+    // Player dot
     if (game.player && game.state !== 'DYING') {
+        ctx.shadowBlur = 6*s; ctx.shadowColor = THEME.primary;
         ctx.fillStyle = '#fff';
-        ctx.beginPath();
-        ctx.arc(cx + game.player.x * mapScale, cy + game.player.y * mapScale, 3 * s, 0, TWO_PI);
-        ctx.fill();
+        ctx.beginPath(); ctx.arc(cx + game.player.x*mapScale, cy + game.player.y*mapScale, 3*s, 0, TWO_PI);
+        ctx.fill(); ctx.shadowBlur = 0;
     }
+
+    // Label
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    ctx.font = `700 ${7*s}px ${THEME.fontLabel}`;
+    ctx.fillStyle = THEME.secondary;
+    ctx.fillText('SCANNING PROXIMITY', cx, cy + mapRadius + 6*s);
 
     ctx.restore();
 }
@@ -1846,21 +1998,70 @@ function renderLevelUpFlash(W, H, dpr) {
     const alpha = clamp(game.levelUpFlashTimer / 2.0, 0, 1);
 
     ctx.save();
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.font = `bold ${40 * s}px 'Segoe UI', Helvetica, Arial, sans-serif`;
-    ctx.fillStyle = colorWithAlpha('#ffffff', alpha * 0.9);
-    ctx.shadowBlur = 20 * s;
-    ctx.shadowColor = PLAYER_COLORS.base;
-    ctx.fillText(`LEVEL ${game.levelUpFlashLevel}!`, W / 2, H * 0.35);
+    // Overlay
+    ctx.fillStyle = colorWithAlpha('#000', alpha * 0.35);
+    ctx.fillRect(0, 0, W, H);
 
-    // Show what's new
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+
+    // Radial burst
+    const burstGrad = ctx.createRadialGradient(W/2, H*0.35, 0, W/2, H*0.35, 250*s);
+    burstGrad.addColorStop(0, colorWithAlpha(THEME.primary, 0.12*alpha));
+    burstGrad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = burstGrad;
+    ctx.fillRect(0, 0, W, H);
+
+    // "SEQUENCE COMPLETE" label
+    ctx.font = `500 ${10*s}px ${THEME.fontLabel}`;
+    ctx.fillStyle = colorWithAlpha(THEME.primary, 0.5*alpha);
+    ctx.letterSpacing = `${3*s}px`;
+    ctx.fillText('SEQUENCE COMPLETE', W/2, H*0.35 - 50*s);
+    ctx.letterSpacing = '0px';
+
+    // "LEVEL X!" text
+    ctx.font = `700 ${64*s}px ${THEME.fontHeadline}`;
+    ctx.fillStyle = colorWithAlpha(THEME.primary, alpha*0.95);
+    ctx.shadowBlur = 25*s;
+    ctx.shadowColor = colorWithAlpha(THEME.primary, 0.7);
+    ctx.fillText(`LEVEL ${game.levelUpFlashLevel}!`, W/2, H*0.35);
+    ctx.shadowBlur = 0;
+
+    // Unlock card
     if (game.levelUpFlashLevel <= 7) {
         const nowEdible = getSpecies(game.levelUpFlashLevel);
-        ctx.font = `${16 * s}px 'Segoe UI', Helvetica, Arial, sans-serif`;
+        const cardW = 260*s, cardH = 80*s;
+        const cardX = W/2 - cardW/2, cardY = H*0.35 + 45*s;
+
+        // glass panel
+        ctx.globalAlpha = alpha;
+        drawGlassPanel(cardX, cardY, cardW, cardH, 8*s);
+        ctx.globalAlpha = 1;
+
+        // "EVOLUTIONARY UNLOCK"
+        ctx.font = `700 ${9*s}px ${THEME.fontLabel}`;
+        ctx.fillStyle = colorWithAlpha(THEME.primary, 0.6*alpha);
+        ctx.fillText('EVOLUTIONARY UNLOCK', W/2, cardY + 14*s);
+
+        // Species circle
+        const circR = 16*s;
+        const circX = W/2 - 60*s, circY = cardY + 50*s;
+        ctx.beginPath(); ctx.arc(circX, circY, circR, 0, TWO_PI);
+        ctx.fillStyle = colorWithAlpha(nowEdible.colors.base, 0.8*alpha);
+        ctx.fill();
+        ctx.shadowBlur = 12*s;
+        ctx.shadowColor = colorWithAlpha(nowEdible.colors.base, 0.5);
+        ctx.beginPath(); ctx.arc(circX, circY, circR, 0, TWO_PI);
+        ctx.fill();
         ctx.shadowBlur = 0;
-        ctx.fillStyle = colorWithAlpha(nowEdible.colors.base, alpha * 0.8);
-        ctx.fillText(`You can now eat: ${nowEdible.name}`, W / 2, H * 0.35 + 35 * s);
+
+        // "You can now eat: PULSER"
+        ctx.textAlign = 'left';
+        ctx.font = `400 ${12*s}px ${THEME.fontBody}`;
+        ctx.fillStyle = colorWithAlpha(THEME.onSurface, 0.6*alpha);
+        ctx.fillText('You can now eat:', circX + circR + 12*s, circY - 8*s);
+        ctx.font = `700 ${18*s}px ${THEME.fontHeadline}`;
+        ctx.fillStyle = colorWithAlpha(nowEdible.colors.base, alpha);
+        ctx.fillText(nowEdible.name.toUpperCase(), circX + circR + 12*s, circY + 10*s);
     }
 
     ctx.restore();
@@ -1870,145 +2071,432 @@ function renderMenu(W, H, dpr, time) {
     const s = dpr;
     ctx.save();
 
-    ctx.translate(W / 2, H / 2);
+    // Draw dish in center
+    ctx.save();
+    ctx.translate(W/2, H/2);
     drawDish(240, time);
-
     for (const a of game.menuAmoebas) {
         ctx.globalAlpha = 0.5;
         a.draw(ctx, time, 0);
         ctx.globalAlpha = 1;
     }
+    // Crosshairs on dish
+    ctx.strokeStyle = colorWithAlpha(THEME.secondary, 0.25);
+    ctx.lineWidth = 1;
+    const chLen = 25;
+    ctx.beginPath(); ctx.moveTo(0, -240); ctx.lineTo(0, -240+chLen); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, 240); ctx.lineTo(0, 240-chLen); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-240, 0); ctx.lineTo(-240+chLen, 0); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(240, 0); ctx.lineTo(240-chLen, 0); ctx.stroke();
+    ctx.restore();
 
+    // Lab metadata decoration
+    ctx.save();
+    ctx.font = `500 ${8*s}px ${THEME.fontLabel}`;
+    ctx.fillStyle = colorWithAlpha(THEME.outline, 0.35);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    ctx.fillText('LIVE_SPECIMEN_FEED', 22*s, 22*s);
+    ctx.fillText('MAGNIFICATION: 400X', 22*s, 34*s);
+    ctx.fillText('STATUS: OBSERVING', 22*s, 46*s);
+    ctx.textAlign = 'right';
+    ctx.fillText('ENVIRONMENT: STABLE', W - 22*s, H - 50*s);
+    ctx.fillText('ENZYME_LEVELS: NOMINAL', W - 22*s, H - 38*s);
     ctx.restore();
 
     // Title
     ctx.save();
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
 
-    const titleY = H * 0.3;
-    ctx.font = `bold ${52 * s}px 'Segoe UI', Helvetica, Arial, sans-serif`;
-    ctx.shadowBlur = 20 * s;
-    ctx.shadowColor = PLAYER_COLORS.base;
-    ctx.fillStyle = '#fff';
+    const titleY = H * 0.22;
+    ctx.font = `italic 700 ${48*s}px ${THEME.fontHeadline}`;
+    ctx.shadowBlur = 20*s;
+    ctx.shadowColor = colorWithAlpha(THEME.primary, 0.7);
+    ctx.fillStyle = THEME.primary;
 
     const title = 'MOEBOID';
     const titleWidth = ctx.measureText(title).width;
     let xOff = -titleWidth / 2;
     for (let i = 0; i < title.length; i++) {
         const charW = ctx.measureText(title[i]).width;
-        const wobbleY = sin(time * 2 + i * 0.7) * 4 * s;
-        ctx.fillText(title[i], W / 2 + xOff + charW / 2, titleY + wobbleY);
+        const wobbleY = sin(time * 2 + i * 0.7) * 3 * s;
+        ctx.fillText(title[i], W/2 + xOff + charW/2, titleY + wobbleY);
         xOff += charW;
     }
-
     ctx.shadowBlur = 0;
 
     // Subtitle
-    ctx.font = `italic ${18 * s}px 'Segoe UI', Helvetica, Arial, sans-serif`;
-    ctx.fillStyle = colorWithAlpha(PLAYER_COLORS.base, 0.8);
-    ctx.fillText('"Eat or be Eaten"', W / 2, titleY + 42 * s);
+    ctx.font = `500 ${13*s}px ${THEME.fontLabel}`;
+    ctx.fillStyle = THEME.secondary;
+    ctx.letterSpacing = `${4*s}px`;
+    ctx.fillText('EAT OR BE EATEN', W/2, titleY + 38*s);
+    ctx.letterSpacing = '0px';
 
-    // Controls
-    ctx.font = `${14 * s}px 'Segoe UI', Helvetica, Arial, sans-serif`;
-    ctx.fillStyle = 'rgba(255,255,255,0.5)';
-    const infoY = H * 0.52;
-    ctx.fillText(IS_MOBILE ? 'Touch to move' : 'Arrow Keys - Move', W / 2, infoY);
-    if (!IS_MOBILE) ctx.fillText('P / Esc - Pause     M - Mute', W / 2, infoY + 24 * s);
-
-    // Food chain preview
-    ctx.font = `${11 * s}px 'Segoe UI', Helvetica, Arial, sans-serif`;
-    ctx.fillStyle = 'rgba(255,255,255,0.35)';
-    ctx.fillText('Eat your way up the food chain!', W / 2, infoY + 55 * s);
-
-    // Mobile joystick onboarding animation
-    if (IS_MOBILE) {
-        const joyY = H * 0.63;
-        const baseR = 30 * s;
-        const nubR = 12 * s;
-        // Animate nub in a smooth circle
-        const angle = time * 1.5;
-        const reach = 18 * s;
-        const nubX = W / 2 + cos(angle) * reach;
-        const nubY = joyY + sin(angle) * reach;
-
-        // Draw base circle
-        ctx.beginPath();
-        ctx.arc(W / 2, joyY, baseR, 0, TWO_PI);
-        ctx.strokeStyle = 'rgba(255,255,255,0.18)';
-        ctx.lineWidth = 2 * s;
-        ctx.stroke();
-
-        // Draw nub
-        ctx.beginPath();
-        ctx.arc(nubX, nubY, nubR, 0, TWO_PI);
-        ctx.fillStyle = 'rgba(255,255,255,0.30)';
-        ctx.fill();
-
-        // Draw finger dot above nub
-        ctx.beginPath();
-        ctx.arc(nubX, nubY - nubR * 0.3, 5 * s, 0, TWO_PI);
-        ctx.fillStyle = 'rgba(255,255,255,0.50)';
-        ctx.fill();
-
-        // Label
-        ctx.font = `${11 * s}px 'Segoe UI', Helvetica, Arial, sans-serif`;
-        ctx.fillStyle = 'rgba(255,255,255,0.40)';
-        ctx.fillText('Touch & drag anywhere to move', W / 2, joyY + baseR + 18 * s);
-    }
-
-    // Start
-    const blink = sin(time * 3) > 0 ? 1 : 0.4;
-    ctx.font = `bold ${20 * s}px 'Segoe UI', Helvetica, Arial, sans-serif`;
-    ctx.fillStyle = colorWithAlpha('#fff', blink);
-    ctx.fillText(IS_MOBILE ? 'Tap to start' : 'Press ENTER or SPACE to start', W / 2, IS_MOBILE ? H * 0.82 : H * 0.72);
+    // Start button
+    const btnY = H * 0.78;
+    ctx.font = `700 ${15*s}px ${THEME.fontHeadline}`;
+    const pulse = 0.85 + 0.15*sin(time*3);
+    ctx.globalAlpha = pulse;
+    drawButton(W/2, btnY, IS_MOBILE ? 'TAP TO START' : 'PRESS ENTER TO START', s, 220*s);
+    ctx.globalAlpha = 1;
 
     // Credit
-    ctx.font = `${11 * s}px 'Segoe UI', Helvetica, Arial, sans-serif`;
-    ctx.fillStyle = 'rgba(255,255,255,0.25)';
-    ctx.fillText("Inspired by ZapSpot's Moeboid (2000)", W / 2, H - 25 * s);
+    ctx.font = `500 ${9*s}px ${THEME.fontLabel}`;
+    ctx.fillStyle = colorWithAlpha(THEME.onSurfaceVar, 0.3);
+    ctx.fillText("Inspired by ZapSpot's Moeboid (2000)", W/2, H - 20*s);
+
+    ctx.restore();
+}
+
+function renderOnboarding(W, H, dpr, time) {
+    const s = dpr;
+    const card = game.onboardingCard;
+    ctx.save();
+
+    // Background overlay
+    ctx.fillStyle = 'rgba(5,15,26,0.92)';
+    ctx.fillRect(0,0,W,H);
+
+    // Viewfinder corners
+    const cLen = 16*s, cOff = 16*s;
+    ctx.strokeStyle = colorWithAlpha(THEME.secondary, 0.2);
+    ctx.lineWidth = 1.5*s;
+    ctx.beginPath(); ctx.moveTo(cOff, cOff+cLen); ctx.lineTo(cOff, cOff); ctx.lineTo(cOff+cLen, cOff); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(W-cOff-cLen, cOff); ctx.lineTo(W-cOff, cOff); ctx.lineTo(W-cOff, cOff+cLen); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cOff, H-cOff-cLen); ctx.lineTo(cOff, H-cOff); ctx.lineTo(cOff+cLen, H-cOff); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(W-cOff-cLen, H-cOff); ctx.lineTo(W-cOff, H-cOff); ctx.lineTo(W-cOff, H-cOff-cLen); ctx.stroke();
+
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+
+    // Card indicator
+    ctx.font = `500 ${10*s}px ${THEME.fontLabel}`;
+    ctx.fillStyle = colorWithAlpha(THEME.secondary, 0.4);
+    ctx.fillText(`0${card+1} / 03`, W - 40*s, 30*s);
+
+    // Dot indicators at bottom
+    for (let i = 0; i < 3; i++) {
+        ctx.beginPath();
+        ctx.arc(W/2 + (i-1)*20*s, H - 50*s, 4*s, 0, TWO_PI);
+        ctx.fillStyle = i === card ? THEME.primary : colorWithAlpha(THEME.surfaceHighest, 0.8);
+        if (i === card) {
+            ctx.shadowBlur = 8*s; ctx.shadowColor = colorWithAlpha(THEME.primary, 0.5);
+        }
+        ctx.fill();
+        ctx.shadowBlur = 0;
+    }
+
+    if (card === 0) {
+        // ── Card 1: Controls ──
+        ctx.font = `700 ${26*s}px ${THEME.fontHeadline}`;
+        ctx.fillStyle = THEME.primary;
+        ctx.fillText('Touch anywhere', W/2, H*0.2);
+        ctx.fillText('and drag to move', W/2, H*0.2 + 34*s);
+
+        // Joystick animation
+        const joyY = H*0.45;
+        const baseR = 50*s;
+        const nubR = 18*s;
+        const angle = time * 1.2;
+        const reach = 28*s;
+        const nubX = W/2 + cos(angle)*reach;
+        const nubY = joyY + sin(angle)*reach;
+
+        // Base circle
+        ctx.beginPath(); ctx.arc(W/2, joyY, baseR, 0, TWO_PI);
+        ctx.fillStyle = colorWithAlpha(THEME.primary, 0.06);
+        ctx.fill();
+        ctx.strokeStyle = colorWithAlpha(THEME.primary, 0.2);
+        ctx.lineWidth = 2*s;
+        ctx.stroke();
+
+        // Trail arc
+        ctx.beginPath();
+        ctx.arc(W/2, joyY, reach, angle - 1.5, angle);
+        ctx.strokeStyle = colorWithAlpha(THEME.primary, 0.15);
+        ctx.lineWidth = 3*s;
+        ctx.stroke();
+
+        // Nub
+        ctx.beginPath(); ctx.arc(nubX, nubY, nubR, 0, TWO_PI);
+        ctx.fillStyle = colorWithAlpha(THEME.primary, 0.3);
+        ctx.fill();
+        ctx.strokeStyle = colorWithAlpha(THEME.primary, 0.5);
+        ctx.lineWidth = 1.5*s;
+        ctx.stroke();
+
+        // Finger icon (touch_app substitute)
+        ctx.font = `700 ${28*s}px ${THEME.fontHeadline}`;
+        ctx.fillStyle = colorWithAlpha(THEME.primary, 0.7);
+        ctx.fillText('👆', nubX, nubY - 2*s);
+
+        // Description
+        ctx.font = `400 ${12*s}px ${THEME.fontBody}`;
+        ctx.fillStyle = colorWithAlpha(THEME.onSurfaceVar, 0.7);
+        ctx.fillText('Precise fluid movement is key to survival.', W/2, H*0.65);
+        ctx.fillText('Your organism follows your touch with inertia.', W/2, H*0.65 + 20*s);
+
+    } else if (card === 1) {
+        // ── Card 2: Rules ──
+        ctx.font = `700 ${24*s}px ${THEME.fontHeadline}`;
+        ctx.fillStyle = THEME.primary;
+        ctx.fillText('Eat creatures your', W/2, H*0.16);
+        ctx.fillText('size or smaller.', W/2, H*0.16 + 32*s);
+        ctx.fillText('Avoid bigger ones.', W/2, H*0.16 + 64*s);
+
+        // Example 1: Player eats smaller ✓
+        const exY1 = H*0.42;
+        const cardW = min(280*s, W*0.8), cardH = 52*s;
+        drawGlassPanel(W/2-cardW/2, exY1, cardW, cardH, 6*s);
+
+        // Player circle
+        ctx.beginPath(); ctx.arc(W/2 - 60*s, exY1+cardH/2, 16*s, 0, TWO_PI);
+        ctx.fillStyle = THEME.primary;
+        ctx.fill();
+        ctx.shadowBlur = 8*s; ctx.shadowColor = colorWithAlpha(THEME.primary, 0.4);
+        ctx.fill(); ctx.shadowBlur = 0;
+
+        // Arrow
+        ctx.font = `600 ${18*s}px ${THEME.fontBody}`;
+        ctx.fillStyle = THEME.secondary;
+        ctx.fillText('→', W/2 - 20*s, exY1+cardH/2);
+
+        // Smaller prey
+        ctx.beginPath(); ctx.arc(W/2 + 20*s, exY1+cardH/2, 10*s, 0, TWO_PI);
+        ctx.fillStyle = colorWithAlpha(THEME.primary, 0.4);
+        ctx.fill();
+
+        // Check
+        ctx.font = `700 ${22*s}px ${THEME.fontBody}`;
+        ctx.fillStyle = THEME.primary;
+        ctx.fillText('✓', W/2 + 80*s, exY1+cardH/2);
+
+        // Example 2: Player vs bigger ✗
+        const exY2 = exY1 + cardH + 12*s;
+        drawGlassPanel(W/2-cardW/2, exY2, cardW, cardH, 6*s);
+
+        ctx.beginPath(); ctx.arc(W/2 - 60*s, exY2+cardH/2, 16*s, 0, TWO_PI);
+        ctx.fillStyle = THEME.primary;
+        ctx.fill();
+
+        ctx.font = `600 ${18*s}px ${THEME.fontBody}`;
+        ctx.fillStyle = THEME.secondary;
+        ctx.fillText('→', W/2 - 20*s, exY2+cardH/2);
+
+        // Bigger predator
+        ctx.beginPath(); ctx.arc(W/2 + 25*s, exY2+cardH/2, 24*s, 0, TWO_PI);
+        ctx.fillStyle = colorWithAlpha(THEME.error, 0.2);
+        ctx.fill();
+        ctx.strokeStyle = colorWithAlpha(THEME.error, 0.4);
+        ctx.lineWidth = 1.5*s;
+        ctx.stroke();
+
+        // X
+        ctx.font = `700 ${22*s}px ${THEME.fontBody}`;
+        ctx.fillStyle = THEME.error;
+        ctx.fillText('✗', W/2 + 80*s, exY2+cardH/2);
+
+        // Description
+        ctx.font = `400 ${12*s}px ${THEME.fontBody}`;
+        ctx.fillStyle = colorWithAlpha(THEME.onSurfaceVar, 0.6);
+        ctx.fillText('Eat enough to level up and grow!', W/2, exY2 + cardH + 30*s);
+
+    } else if (card === 2) {
+        // ── Card 3: Goal ──
+        ctx.font = `700 ${22*s}px ${THEME.fontHeadline}`;
+        ctx.fillStyle = THEME.primary;
+        ctx.fillText('Climb the food chain', W/2, H*0.16);
+        ctx.fillText('from Mote to Titan', W/2, H*0.16 + 30*s);
+
+        // Species progression
+        const progY = H*0.42;
+        const species = [0, 1, 2, 3, 4, 5, 6, 7]; // all 8
+        const totalW = min(300*s, W*0.85);
+        const spacing = totalW / 7;
+        const startX = W/2 - totalW/2;
+
+        for (let i = 0; i < 8; i++) {
+            const sp = SPECIES_TABLE[i];
+            const dx = startX + i*spacing;
+            const r = (5 + i*2.5)*s;
+
+            ctx.beginPath(); ctx.arc(dx, progY, r, 0, TWO_PI);
+            ctx.fillStyle = colorWithAlpha(sp.colors.base, 0.6);
+            ctx.fill();
+
+            if (i < 7) {
+                ctx.strokeStyle = colorWithAlpha(THEME.primary, 0.15);
+                ctx.lineWidth = 1;
+                ctx.beginPath(); ctx.moveTo(dx+r+2*s, progY); ctx.lineTo(dx+spacing-r-2*s, progY); ctx.stroke();
+            }
+
+            ctx.font = `700 ${6*s}px ${THEME.fontLabel}`;
+            ctx.fillStyle = colorWithAlpha(sp.colors.base, 0.7);
+            ctx.fillText(sp.name.toUpperCase().slice(0,4), dx, progY + r + 12*s);
+        }
+
+        // Lives
+        const livesY = H*0.58;
+        drawGlassPanel(W/2-100*s, livesY, 200*s, 40*s, 20*s);
+        ctx.font = `500 ${10*s}px ${THEME.fontLabel}`;
+        ctx.fillStyle = colorWithAlpha(THEME.onSurfaceVar, 0.7);
+        ctx.fillText('VITALITY UNITS:', W/2 - 30*s, livesY+20*s);
+        for (let i = 0; i < 3; i++) {
+            ctx.beginPath(); ctx.arc(W/2 + 30*s + i*18*s, livesY+20*s, 6*s, 0, TWO_PI);
+            ctx.fillStyle = THEME.primary;
+            ctx.fill();
+            ctx.shadowBlur = 4*s; ctx.shadowColor = colorWithAlpha(THEME.primary, 0.4);
+            ctx.fill(); ctx.shadowBlur = 0;
+        }
+
+        // "Let's go!" button
+        ctx.font = `700 ${15*s}px ${THEME.fontHeadline}`;
+        drawButton(W/2, H*0.72, "LET'S GO!", s, 200*s);
+    }
+
+    // Tap hint
+    ctx.font = `400 ${11*s}px ${THEME.fontBody}`;
+    ctx.fillStyle = colorWithAlpha(THEME.onSurfaceVar, 0.35);
+    ctx.fillText(card < 2 ? (IS_MOBILE ? 'Tap to continue' : 'Press ENTER to continue') : '', W/2, H - 80*s);
 
     ctx.restore();
 }
 
 function renderGameOver(W, H, dpr) {
     const s = dpr;
-
     ctx.save();
-    ctx.fillStyle = 'rgba(0,0,0,0.7)';
-    ctx.fillRect(0, 0, W, H);
 
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
+    // Red vignette overlay
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(0,0,W,H);
+    const redVg = ctx.createRadialGradient(W/2, H/2, min(W,H)*0.2, W/2, H/2, max(W,H)*0.7);
+    redVg.addColorStop(0, 'rgba(0,0,0,0)');
+    redVg.addColorStop(1, 'rgba(159,5,25,0.35)');
+    ctx.fillStyle = redVg;
+    ctx.fillRect(0,0,W,H);
 
-    ctx.font = `bold ${48 * s}px 'Segoe UI', Helvetica, Arial, sans-serif`;
-    ctx.fillStyle = '#ff4444';
-    ctx.shadowBlur = 20 * s;
-    ctx.shadowColor = '#ff0000';
-    ctx.fillText('GAME OVER', W / 2, H * 0.28);
+    // Viewfinder corners
+    const cLen = 16*s, cOff = 20*s;
+    ctx.strokeStyle = colorWithAlpha(THEME.secondary, 0.2);
+    ctx.lineWidth = 1.5*s;
+    ctx.beginPath(); ctx.moveTo(cOff, cOff+cLen); ctx.lineTo(cOff, cOff); ctx.lineTo(cOff+cLen, cOff); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(W-cOff-cLen, cOff); ctx.lineTo(W-cOff, cOff); ctx.lineTo(W-cOff, cOff+cLen); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cOff, H-cOff-cLen); ctx.lineTo(cOff, H-cOff); ctx.lineTo(cOff+cLen, H-cOff); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(W-cOff-cLen, H-cOff); ctx.lineTo(W-cOff, H-cOff); ctx.lineTo(W-cOff, H-cOff-cLen); ctx.stroke();
+
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+
+    // Label
+    ctx.font = `500 ${10*s}px ${THEME.fontLabel}`;
+    ctx.fillStyle = THEME.errorDim;
+    ctx.letterSpacing = `${3*s}px`;
+    ctx.fillText('BIOLOGICAL SYSTEM FAILURE', W/2, H*0.18);
+    ctx.letterSpacing = '0px';
+
+    // "GAME OVER"
+    ctx.font = `700 ${56*s}px ${THEME.fontHeadline}`;
+    ctx.fillStyle = THEME.error;
+    ctx.shadowBlur = 25*s;
+    ctx.shadowColor = colorWithAlpha(THEME.error, 0.6);
+    ctx.fillText('GAME OVER', W/2, H*0.26);
     ctx.shadowBlur = 0;
 
-    ctx.font = `${18 * s}px 'Segoe UI', Helvetica, Arial, sans-serif`;
-    ctx.fillStyle = '#ddd';
-    const statY = H * 0.42;
-    const lineH = 32 * s;
-    ctx.fillText(`Score: ${game.score.toLocaleString()}`, W / 2, statY);
-    ctx.fillText(`Level Reached: ${game.player.maxLevel}`, W / 2, statY + lineH);
-    ctx.fillText(`Amoebas Eaten: ${game.totalEaten}`, W / 2, statY + lineH * 2);
+    // Stat cards
+    const cardW = min(280*s, W*0.8);
+    const cardH = 55*s;
+    const cardX = W/2 - cardW/2;
+    const cardGap = 8*s;
+    let cy = H*0.36;
 
-    // Show species unlocked
-    const speciesNames = [];
-    for (let i = 1; i <= game.player.maxLevel && i <= 8; i++) {
-        speciesNames.push(getSpecies(i).name);
+    // Score card
+    drawGlassPanel(cardX, cy, cardW, cardH, 8*s);
+    ctx.font = `500 ${9*s}px ${THEME.fontLabel}`;
+    ctx.fillStyle = colorWithAlpha(THEME.onSurfaceVar, 0.7);
+    ctx.fillText('FINAL SCORE', W/2, cy + 16*s);
+    ctx.font = `700 ${24*s}px ${THEME.fontHeadline}`;
+    ctx.fillStyle = THEME.primary;
+    ctx.fillText(game.score.toLocaleString(), W/2, cy + 38*s);
+    cy += cardH + cardGap;
+
+    // Level card
+    drawGlassPanel(cardX, cy, cardW, cardH, 8*s);
+    ctx.font = `500 ${9*s}px ${THEME.fontLabel}`;
+    ctx.fillStyle = colorWithAlpha(THEME.onSurfaceVar, 0.7);
+    ctx.fillText('STATUS REACHED', W/2, cy + 16*s);
+    const reachedSpec = getSpecies(min(game.player.maxLevel, 8));
+    ctx.font = `700 ${20*s}px ${THEME.fontHeadline}`;
+    ctx.fillStyle = THEME.secondary;
+    ctx.fillText(`LEVEL ${game.player.maxLevel} — ${reachedSpec.name.toUpperCase()}`, W/2, cy + 38*s);
+    cy += cardH + cardGap;
+
+    // Eaten card
+    drawGlassPanel(cardX, cy, cardW, cardH, 8*s);
+    ctx.font = `500 ${9*s}px ${THEME.fontLabel}`;
+    ctx.fillStyle = colorWithAlpha(THEME.onSurfaceVar, 0.7);
+    ctx.fillText('AMOEBAS ASSIMILATED', W/2, cy + 16*s);
+    ctx.font = `700 ${24*s}px ${THEME.fontHeadline}`;
+    ctx.fillStyle = THEME.onSurface;
+    ctx.fillText(game.totalEaten.toString(), W/2, cy + 38*s);
+    cy += cardH + cardGap + 8*s;
+
+    // Evolution progress chain
+    const chainW = min(300*s, W*0.85);
+    const chainX = W/2 - chainW/2;
+    drawGlassPanel(chainX, cy, chainW, 75*s, 8*s);
+    ctx.font = `700 ${8*s}px ${THEME.fontLabel}`;
+    ctx.fillStyle = colorWithAlpha(THEME.onSurfaceVar, 0.5);
+    ctx.fillText('EVOLUTIONARY PROGRESS', W/2, cy + 12*s);
+
+    const specCount = min(game.player.maxLevel + 1, 8);
+    const dotSpacing = chainW / 6;
+    const dotY = cy + 48*s;
+    for (let i = 0; i < min(5, 8); i++) {
+        const sp = getSpecies(i + 1);
+        const dx = chainX + 30*s + i*dotSpacing;
+        const conquered = (i+1) <= game.player.maxLevel;
+        const isCurrent = (i+1) === game.player.maxLevel;
+
+        const dotR = isCurrent ? 14*s : 10*s;
+        ctx.beginPath(); ctx.arc(dx, dotY, dotR, 0, TWO_PI);
+        if (conquered) {
+            ctx.fillStyle = colorWithAlpha(sp.colors.base, isCurrent ? 0.3 : 0.15);
+            ctx.fill();
+            ctx.strokeStyle = colorWithAlpha(sp.colors.base, isCurrent ? 0.8 : 0.5);
+            ctx.lineWidth = isCurrent ? 2*s : 1*s;
+            ctx.stroke();
+            if (isCurrent) {
+                ctx.shadowBlur = 10*s; ctx.shadowColor = colorWithAlpha(sp.colors.base, 0.4);
+                ctx.stroke(); ctx.shadowBlur = 0;
+            }
+        } else {
+            ctx.fillStyle = colorWithAlpha(THEME.outline, 0.1);
+            ctx.fill();
+            ctx.strokeStyle = colorWithAlpha(THEME.outline, 0.2);
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        }
+        ctx.font = `700 ${7*s}px ${THEME.fontLabel}`;
+        ctx.fillStyle = conquered ? colorWithAlpha(sp.colors.base, 0.8) : colorWithAlpha(THEME.outline, 0.3);
+        ctx.fillText(sp.name.toUpperCase().slice(0,4), dx, dotY + dotR + 10*s);
+
+        // connector line
+        if (i < 4) {
+            ctx.strokeStyle = conquered && (i+2)<=game.player.maxLevel ?
+                colorWithAlpha(THEME.primary, 0.25) : colorWithAlpha(THEME.outline, 0.1);
+            ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(dx+dotR+2*s, dotY); ctx.lineTo(dx+dotSpacing-dotR-2*s, dotY); ctx.stroke();
+        }
     }
-    ctx.font = `${14 * s}px 'Segoe UI', Helvetica, Arial, sans-serif`;
-    ctx.fillStyle = 'rgba(255,255,255,0.5)';
-    ctx.fillText(`Species conquered: ${speciesNames.join(', ')}`, W / 2, statY + lineH * 3.2);
+    cy += 85*s;
 
-    ctx.font = `bold ${16 * s}px 'Segoe UI', Helvetica, Arial, sans-serif`;
-    ctx.fillStyle = 'rgba(255,255,255,0.6)';
-    ctx.fillText(IS_MOBILE ? 'Tap to play again' : 'Press ENTER to play again', W / 2, H * 0.78);
-    if (!IS_MOBILE) ctx.fillText('Press N for menu', W / 2, H * 0.78 + 28 * s);
+    // Play again button
+    ctx.font = `700 ${14*s}px ${THEME.fontHeadline}`;
+    drawButton(W/2, cy, IS_MOBILE ? 'TAP TO PLAY AGAIN' : 'PLAY AGAIN', s, 220*s);
+
+    // Menu link
+    if (!IS_MOBILE) {
+        ctx.font = `500 ${10*s}px ${THEME.fontLabel}`;
+        ctx.fillStyle = colorWithAlpha(THEME.onSurfaceVar, 0.5);
+        ctx.fillText('Press N for menu', W/2, cy + 34*s);
+    }
 
     ctx.restore();
 }
@@ -2016,18 +2504,81 @@ function renderGameOver(W, H, dpr) {
 function renderPaused(W, H, dpr) {
     const s = dpr;
     ctx.save();
-    ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    ctx.fillRect(0, 0, W, H);
 
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.font = `bold ${40 * s}px 'Segoe UI', Helvetica, Arial, sans-serif`;
-    ctx.fillStyle = '#fff';
-    ctx.fillText('PAUSED', W / 2, H / 2 - 15 * s);
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.fillRect(0,0,W,H);
 
-    ctx.font = `${16 * s}px 'Segoe UI', Helvetica, Arial, sans-serif`;
-    ctx.fillStyle = 'rgba(255,255,255,0.5)';
-    ctx.fillText(IS_MOBILE ? 'Tap to resume' : 'Press P or ESC to resume', W / 2, H / 2 + 25 * s);
+    // Viewfinder corners
+    const cLen = 16*s, cOff = 20*s;
+    ctx.strokeStyle = colorWithAlpha(THEME.secondary, 0.25);
+    ctx.lineWidth = 1.5*s;
+    ctx.beginPath(); ctx.moveTo(cOff, cOff+cLen); ctx.lineTo(cOff, cOff); ctx.lineTo(cOff+cLen, cOff); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(W-cOff-cLen, cOff); ctx.lineTo(W-cOff, cOff); ctx.lineTo(W-cOff, cOff+cLen); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cOff, H-cOff-cLen); ctx.lineTo(cOff, H-cOff); ctx.lineTo(cOff+cLen, H-cOff); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(W-cOff-cLen, H-cOff); ctx.lineTo(W-cOff, H-cOff); ctx.lineTo(W-cOff, H-cOff-cLen); ctx.stroke();
+
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+
+    // Label
+    ctx.font = `500 ${10*s}px ${THEME.fontLabel}`;
+    ctx.fillStyle = colorWithAlpha(THEME.secondary, 0.5);
+    ctx.letterSpacing = `${3*s}px`;
+    ctx.fillText('SYSTEM STATE: STANDBY', W/2, H*0.28);
+    ctx.letterSpacing = '0px';
+
+    // "PAUSED"
+    ctx.font = `700 ${58*s}px ${THEME.fontHeadline}`;
+    ctx.fillStyle = THEME.onSurface;
+    ctx.shadowBlur = 15*s;
+    ctx.shadowColor = 'rgba(255,255,255,0.08)';
+    ctx.fillText('PAUSED', W/2, H*0.36);
+    ctx.shadowBlur = 0;
+
+    // Stat cards
+    const cardW = min(260*s, W*0.75);
+    const cardH = 60*s;
+    const cardX = W/2 - cardW/2;
+    const gap = 8*s;
+    let cy = H*0.46;
+
+    // Score
+    drawGlassPanel(cardX, cy, cardW, cardH, 6*s);
+    ctx.font = `500 ${9*s}px ${THEME.fontLabel}`;
+    ctx.fillStyle = colorWithAlpha(THEME.secondary, 0.45);
+    ctx.fillText('CURRENT YIELD', W/2, cy + 18*s);
+    ctx.font = `700 ${26*s}px ${THEME.fontHeadline}`;
+    ctx.fillStyle = THEME.primary;
+    ctx.fillText(game.score.toLocaleString(), W/2, cy + 42*s);
+    cy += cardH + gap;
+
+    // Level
+    drawGlassPanel(cardX, cy, cardW, cardH, 6*s);
+    ctx.font = `500 ${9*s}px ${THEME.fontLabel}`;
+    ctx.fillStyle = colorWithAlpha(THEME.secondary, 0.45);
+    ctx.fillText('OBSERVATION DEPTH', W/2, cy + 18*s);
+    ctx.font = `700 ${26*s}px ${THEME.fontHeadline}`;
+    ctx.fillStyle = THEME.onSurface;
+    ctx.fillText(`LVL 0${game.player.level}`, W/2, cy + 42*s);
+    cy += cardH + gap;
+
+    // Eaten
+    drawGlassPanel(cardX, cy, cardW, cardH, 6*s);
+    ctx.font = `500 ${9*s}px ${THEME.fontLabel}`;
+    ctx.fillStyle = colorWithAlpha(THEME.secondary, 0.45);
+    ctx.fillText('SPECIMENS EATEN', W/2, cy + 18*s);
+    ctx.font = `700 ${26*s}px ${THEME.fontHeadline}`;
+    ctx.fillStyle = '#cfffdd';
+    ctx.fillText(game.totalEaten.toString(), W/2, cy + 42*s);
+    cy += cardH + 20*s;
+
+    // Resume button
+    ctx.font = `700 ${14*s}px ${THEME.fontHeadline}`;
+    drawButton(W/2, cy, IS_MOBILE ? '▶  TAP TO RESUME' : '▶  RESUME', s, 220*s);
+
+    // Metadata
+    ctx.font = `500 ${8*s}px ${THEME.fontLabel}`;
+    ctx.fillStyle = colorWithAlpha(THEME.outline, 0.3);
+    ctx.fillText('SESSION ACTIVE • AUTOSAVED', W/2, H - 30*s);
 
     ctx.restore();
 }
