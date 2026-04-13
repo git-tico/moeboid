@@ -22,11 +22,40 @@
             width: 100%;
             height: 100%;
             cursor: none;
+            touch-action: none;
+        }
+        /* Mobile joystick & controls */
+        #joystick-zone {
+            position: fixed; left: 0; top: 0; width: 100%; height: 100%;
+            z-index: 10; touch-action: none; display: none;
+        }
+        #joystick-base {
+            position: fixed; width: 120px; height: 120px; border-radius: 50%;
+            background: rgba(255,255,255,0.10); border: 2px solid rgba(255,255,255,0.22);
+            display: none; pointer-events: none; z-index: 11;
+            transform: translate(-50%, -50%);
+        }
+        #joystick-nub {
+            position: fixed; width: 50px; height: 50px; border-radius: 50%;
+            background: rgba(255,255,255,0.30);
+            display: none; pointer-events: none; z-index: 12;
+            transform: translate(-50%, -50%);
+        }
+        #mobile-pause {
+            position: fixed; top: 12px; right: 12px; width: 44px; height: 44px;
+            border-radius: 50%; background: rgba(0,0,0,0.4);
+            border: 2px solid rgba(255,255,255,0.3); color: #fff; font-size: 20px;
+            z-index: 20; display: none; cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
         }
     </style>
 </head>
 <body>
     <canvas id="gameCanvas"></canvas>
+    <div id="joystick-zone"></div>
+    <div id="joystick-base"></div>
+    <div id="joystick-nub"></div>
+    <button id="mobile-pause">⏸</button>
     <script src="game.js"></script>
 </body>
 </html>

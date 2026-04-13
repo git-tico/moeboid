@@ -6,6 +6,11 @@
 // ============================================================
 
 // ============================================================
+// SECTION 0: PLATFORM DETECTION
+// ============================================================
+const IS_MOBILE = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+
+// ============================================================
 // SECTION 1: CONFIGURATION
 // ============================================================
 const CONFIG = {
@@ -1020,6 +1025,12 @@ class PopulationManager {
 class InputHandler {
     constructor() {
         this.keys = {};
+        // Touch input (set by TouchController)
+        this.touchMoveX = 0;
+        this.touchMoveY = 0;
+        this.touchActive = false;
+        this._tapFlag = false;
+
         window.addEventListener('keydown', (e) => {
             this.keys[e.code] = true;
             if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
@@ -1033,12 +1044,124 @@ class InputHandler {
 
     isPressed(code) { return this.keys[code] === true; }
 
+    consumeTap() {
+        if (this._tapFlag) { this._tapFlag = false; return true; }
+        return false;
+    }
+
     get moveX() {
+        if (this.touchActive) return this.touchMoveX;
         return (this.isPressed('ArrowRight') ? 1 : 0) - (this.isPressed('ArrowLeft') ? 1 : 0);
     }
 
     get moveY() {
+        if (this.touchActive) return this.touchMoveY;
         return (this.isPressed('ArrowDown') ? 1 : 0) - (this.isPressed('ArrowUp') ? 1 : 0);
+    }
+}
+
+// ============================================================
+// SECTION 10b: TOUCH CONTROLLER (mobile joystick)
+// ============================================================
+class TouchController {
+    constructor(inputHandler) {
+        this.input = inputHandler;
+        this.zone = document.getElementById('joystick-zone');
+        this.base = document.getElementById('joystick-base');
+        this.nub = document.getElementById('joystick-nub');
+        this.activeId = null;    // touch identifier being tracked
+        this.originX = 0;
+        this.originY = 0;
+        this.startTime = 0;
+        this.startX = 0;
+        this.startY = 0;
+        this.maxRadius = 55;     // max nub displacement from center
+        this.deadZone = 10;      // pixels
+
+        this.zone.addEventListener('touchstart', e => this.onStart(e), { passive: false });
+        this.zone.addEventListener('touchmove', e => this.onMove(e), { passive: false });
+        this.zone.addEventListener('touchend', e => this.onEnd(e), { passive: false });
+        this.zone.addEventListener('touchcancel', e => this.onEnd(e), { passive: false });
+    }
+
+    onStart(e) {
+        e.preventDefault();
+        if (this.activeId !== null) return; // already tracking a touch
+
+        const t = e.changedTouches[0];
+        this.activeId = t.identifier;
+        this.originX = t.clientX;
+        this.originY = t.clientY;
+        this.startX = t.clientX;
+        this.startY = t.clientY;
+        this.startTime = performance.now();
+
+        // Show joystick at touch point
+        this.base.style.left = t.clientX + 'px';
+        this.base.style.top = t.clientY + 'px';
+        this.base.style.display = 'block';
+        this.nub.style.left = t.clientX + 'px';
+        this.nub.style.top = t.clientY + 'px';
+        this.nub.style.display = 'block';
+
+        this.input.touchActive = true;
+    }
+
+    onMove(e) {
+        e.preventDefault();
+        for (const t of e.changedTouches) {
+            if (t.identifier !== this.activeId) continue;
+
+            const dx = t.clientX - this.originX;
+            const dy = t.clientY - this.originY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            // Clamp nub position
+            let clampedX, clampedY;
+            if (dist > this.maxRadius) {
+                clampedX = this.originX + (dx / dist) * this.maxRadius;
+                clampedY = this.originY + (dy / dist) * this.maxRadius;
+            } else {
+                clampedX = t.clientX;
+                clampedY = t.clientY;
+            }
+            this.nub.style.left = clampedX + 'px';
+            this.nub.style.top = clampedY + 'px';
+
+            // Calculate analog input with dead zone
+            if (dist < this.deadZone) {
+                this.input.touchMoveX = 0;
+                this.input.touchMoveY = 0;
+            } else {
+                const mag = Math.min((dist - this.deadZone) / (this.maxRadius - this.deadZone), 1);
+                this.input.touchMoveX = (dx / dist) * mag;
+                this.input.touchMoveY = (dy / dist) * mag;
+            }
+        }
+    }
+
+    onEnd(e) {
+        e.preventDefault();
+        for (const t of e.changedTouches) {
+            if (t.identifier !== this.activeId) continue;
+
+            // Detect tap: short duration + small movement
+            const elapsed = performance.now() - this.startTime;
+            const movedX = t.clientX - this.startX;
+            const movedY = t.clientY - this.startY;
+            const moved = Math.sqrt(movedX * movedX + movedY * movedY);
+            if (elapsed < 250 && moved < 20) {
+                this.input._tapFlag = true;
+            }
+
+            // Reset
+            this.activeId = null;
+            this.input.touchMoveX = 0;
+            this.input.touchMoveY = 0;
+            this.input.touchActive = false;
+            this.base.style.display = 'none';
+            this.nub.style.display = 'none';
+        }
     }
 }
 
@@ -1285,7 +1408,7 @@ function update(dt) {
                 a.y += a.vy * dt;
                 a.constrainToDish(240);
             }
-            if (input.isPressed('Enter') || input.isPressed('Space')) {
+            if (input.isPressed('Enter') || input.isPressed('Space') || input.consumeTap()) {
                 startGame();
             }
             break;
@@ -1366,7 +1489,7 @@ function update(dt) {
                     a.y += a.vy * dt;
                 }
             }
-            if (input.isPressed('Enter') || input.isPressed('Space')) {
+            if (input.isPressed('Enter') || input.isPressed('Space') || input.consumeTap()) {
                 input.keys['Enter'] = false;
                 input.keys['Space'] = false;
                 startGame();
@@ -1380,7 +1503,7 @@ function update(dt) {
             break;
 
         case 'PAUSED':
-            if (input.isPressed('KeyP') || input.isPressed('Escape')) {
+            if (input.isPressed('KeyP') || input.isPressed('Escape') || input.consumeTap()) {
                 game.state = 'PLAYING';
                 input.keys['KeyP'] = false;
                 input.keys['Escape'] = false;
@@ -1790,8 +1913,8 @@ function renderMenu(W, H, dpr, time) {
     ctx.font = `${14 * s}px 'Segoe UI', Helvetica, Arial, sans-serif`;
     ctx.fillStyle = 'rgba(255,255,255,0.5)';
     const infoY = H * 0.52;
-    ctx.fillText('Arrow Keys - Move', W / 2, infoY);
-    ctx.fillText('P / Esc - Pause     M - Mute', W / 2, infoY + 24 * s);
+    ctx.fillText(IS_MOBILE ? 'Touch to move' : 'Arrow Keys - Move', W / 2, infoY);
+    if (!IS_MOBILE) ctx.fillText('P / Esc - Pause     M - Mute', W / 2, infoY + 24 * s);
 
     // Food chain preview
     ctx.font = `${11 * s}px 'Segoe UI', Helvetica, Arial, sans-serif`;
@@ -1802,7 +1925,7 @@ function renderMenu(W, H, dpr, time) {
     const blink = sin(time * 3) > 0 ? 1 : 0.4;
     ctx.font = `bold ${20 * s}px 'Segoe UI', Helvetica, Arial, sans-serif`;
     ctx.fillStyle = colorWithAlpha('#fff', blink);
-    ctx.fillText('Press ENTER or SPACE to start', W / 2, H * 0.72);
+    ctx.fillText(IS_MOBILE ? 'Tap to start' : 'Press ENTER or SPACE to start', W / 2, H * 0.72);
 
     // Credit
     ctx.font = `${11 * s}px 'Segoe UI', Helvetica, Arial, sans-serif`;
@@ -1848,8 +1971,8 @@ function renderGameOver(W, H, dpr) {
 
     ctx.font = `bold ${16 * s}px 'Segoe UI', Helvetica, Arial, sans-serif`;
     ctx.fillStyle = 'rgba(255,255,255,0.6)';
-    ctx.fillText('Press ENTER to play again', W / 2, H * 0.78);
-    ctx.fillText('Press N for menu', W / 2, H * 0.78 + 28 * s);
+    ctx.fillText(IS_MOBILE ? 'Tap to play again' : 'Press ENTER to play again', W / 2, H * 0.78);
+    if (!IS_MOBILE) ctx.fillText('Press N for menu', W / 2, H * 0.78 + 28 * s);
 
     ctx.restore();
 }
@@ -1868,7 +1991,7 @@ function renderPaused(W, H, dpr) {
 
     ctx.font = `${16 * s}px 'Segoe UI', Helvetica, Arial, sans-serif`;
     ctx.fillStyle = 'rgba(255,255,255,0.5)';
-    ctx.fillText('Press P or ESC to resume', W / 2, H / 2 + 25 * s);
+    ctx.fillText(IS_MOBILE ? 'Tap to resume' : 'Press P or ESC to resume', W / 2, H / 2 + 25 * s);
 
     ctx.restore();
 }
@@ -1930,6 +2053,8 @@ requestAnimationFrame(gameLoop);
 // SECTION: LIVE TUNING PANEL (temporary debug tool)
 // ============================================================
 (() => {
+    if (IS_MOBILE) return; // No tuning panel on mobile
+
     const DEFAULTS = {
         config: JSON.parse(JSON.stringify(CONFIG)),
         tuning: JSON.parse(JSON.stringify(TUNING)),
@@ -2119,3 +2244,28 @@ requestAnimationFrame(gameLoop);
     btnRow.append(btnCopy, btnReset);
     panel.appendChild(btnRow);
 })();
+
+// ============================================================
+// SECTION: MOBILE CONTROLS INIT
+// ============================================================
+if (IS_MOBILE) {
+    // Show joystick zone and pause button
+    document.getElementById('joystick-zone').style.display = 'block';
+    const pauseBtn = document.getElementById('mobile-pause');
+    pauseBtn.style.display = 'block';
+    pauseBtn.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (game.state === 'PLAYING') {
+            game.state = 'PAUSED';
+        } else if (game.state === 'PAUSED') {
+            game.state = 'PLAYING';
+        }
+    }, { passive: false });
+
+    // Initialize touch controller
+    new TouchController(input);
+
+    // Hide cursor style on mobile
+    document.querySelector('canvas').style.cursor = 'default';
+}
