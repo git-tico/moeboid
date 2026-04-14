@@ -9,7 +9,10 @@
 // SECTION 0: PLATFORM DETECTION
 // ============================================================
 const IS_MOBILE = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-const BUILD_ID = 'tilt-10';
+const BUILD_ID = 'tilt-11';
+
+// Try to lock orientation to portrait (works on Android Chrome & PWAs)
+try { screen.orientation.lock('portrait').catch(() => {}); } catch(e) {}
 
 // ============================================================
 // SECTION 1: CONFIGURATION
