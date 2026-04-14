@@ -9,7 +9,7 @@
 // SECTION 0: PLATFORM DETECTION
 // ============================================================
 const IS_MOBILE = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-const BUILD_ID = 'tilt-9';
+const BUILD_ID = 'tilt-10';
 
 // ============================================================
 // SECTION 1: CONFIGURATION
@@ -1443,8 +1443,8 @@ class TiltController {
         this.input = inputHandler;
         this.calibration = { beta: 0, gamma: 0 };
         this.calibrated = false;
-        this.maxAngle = 30;   // degrees for full speed
-        this.deadZone = 3;    // degrees ignored (hand tremor)
+        this.maxAngle = 18;   // degrees for full speed (lower = more sensitive)
+        this.deadZone = 2;    // degrees ignored (hand tremor)
         this.latestBeta = 0;
         this.latestGamma = 0;
         this.listening = false;
