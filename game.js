@@ -9,7 +9,7 @@
 // SECTION 0: PLATFORM DETECTION
 // ============================================================
 const IS_MOBILE = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-const BUILD_ID = 'tilt-5';
+const BUILD_ID = 'tilt-6';
 
 // ============================================================
 // SECTION 1: CONFIGURATION
@@ -2592,6 +2592,28 @@ function renderTiltCalibration(W, H, dpr, time) {
     const btnY = cy + 80 * s;
     const pulse = 0.5 + 0.5 * Math.sin(time / 400);
     drawButton(btnX, btnY, btnW, btnH, 'CALIBRATE & START', 14 * s, pulse);
+
+    // DEBUG: tilt controller state
+    const tc = window._tiltCtrl;
+    if (tc) {
+        ctx.font = `${9*s}px monospace`;
+        ctx.fillStyle = '#ff0';
+        ctx.textAlign = 'left';
+        const lines = [
+            `needsPerm:${tc._needsPermission} listening:${tc.listening} cal:${tc.calibrated}`,
+            `beta:${tc.latestBeta.toFixed(1)} gamma:${tc.latestGamma.toFixed(1)}`,
+            `taps:${game._calibTaps||0} dbg:${game._calibDbg||'none'}`,
+        ];
+        lines.forEach((l, i) => ctx.fillText(l, 10*s, (H - 60*s) + i * 13*s));
+    }
+
+    // After 3 taps, show force-start option
+    if ((game._calibTaps||0) >= 3) {
+        ctx.fillStyle = THEME.error;
+        ctx.font = `bold ${12*s}px ${THEME.fontBody}`;
+        ctx.textAlign = 'center';
+        ctx.fillText('Tap again to FORCE START (no tilt)', cx, btnY + btnH + 30*s);
+    }
 }
 
 function renderOnboarding(W, H, dpr, time) {
@@ -3309,22 +3331,32 @@ if (IS_MOBILE) {
 
         if (game.state === 'TILT_CALIBRATING') {
             e.preventDefault();
+            game._calibTaps = (game._calibTaps || 0) + 1;
+            game._calibDbg = 'tap#' + game._calibTaps;
+
+            // After 4+ taps, force start without tilt (fallback)
+            if (game._calibTaps >= 4) {
+                game._calibDbg = 'force-start';
+                game.state = 'PLAYING';
+                return;
+            }
+
             const doCalibrate = () => {
-                // Wait for orientation data to arrive, then calibrate
+                game._calibDbg = 'calibrating...';
                 setTimeout(() => {
                     tiltCtrl.calibrate();
                     game.state = 'PLAYING';
-                    console.log('[Tilt] Calibrated!', tiltCtrl.calibration);
+                    game._calibDbg = 'done!';
                 }, 300);
             };
             if (tiltCtrl._needsPermission) {
-                // iOS: must call requestPermission synchronously in gesture handler
+                game._calibDbg = 'requesting iOS perm...';
                 tiltCtrl.requestiOSPermission(doCalibrate);
             } else {
                 if (!tiltCtrl.listening) tiltCtrl._listen();
                 doCalibrate();
             }
-            return; // don't set tapFlag, we handle state change here
+            return;
         }
 
         input._tapFlag = true;
