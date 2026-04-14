@@ -9,6 +9,7 @@
 // SECTION 0: PLATFORM DETECTION
 // ============================================================
 const IS_MOBILE = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+const BUILD_ID = 'tilt-5';
 
 // ============================================================
 // SECTION 1: CONFIGURATION
@@ -2516,6 +2517,12 @@ function renderMenu(W, H, dpr, time) {
     ctx.font = `500 ${9*s}px ${THEME.fontLabel}`;
     ctx.fillStyle = colorWithAlpha(THEME.onSurfaceVar, 0.3);
     ctx.fillText("Inspired by ZapSpot's Moeboid (2000)", W/2, H - 20*s);
+
+    // Build ID
+    ctx.font = `${8*s}px monospace`;
+    ctx.fillStyle = colorWithAlpha(THEME.outline, 0.4);
+    ctx.textAlign = 'right';
+    ctx.fillText(BUILD_ID, W - 10*s, H - 8*s);
 
     ctx.restore();
 }
