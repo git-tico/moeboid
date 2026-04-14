@@ -49,6 +49,17 @@
             z-index: 20; display: none; cursor: pointer;
             -webkit-tap-highlight-color: transparent;
         }
+        #calibrate-btn {
+            position: fixed; left: 50%; top: 60%; transform: translate(-50%, -50%);
+            width: 220px; height: 50px; border: none; border-radius: 8px;
+            background: linear-gradient(135deg, #59ef98, #14c16f);
+            color: #050f1a; font-family: 'Space Grotesk', sans-serif;
+            font-size: 16px; font-weight: 700; letter-spacing: 0.5px;
+            z-index: 30; display: none; cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+            box-shadow: 0 0 20px rgba(105,254,165,0.35);
+        }
+        #calibrate-btn:active { opacity: 0.8; }
     </style>
 </head>
 <body>
@@ -57,6 +68,7 @@
     <div id="joystick-base"></div>
     <div id="joystick-nub"></div>
     <button id="mobile-pause">⏸</button>
+    <button id="calibrate-btn">CALIBRATE & START</button>
     <script src="game.js"></script>
 </body>
 </html>

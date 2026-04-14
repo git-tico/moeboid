@@ -9,7 +9,7 @@
 // SECTION 0: PLATFORM DETECTION
 // ============================================================
 const IS_MOBILE = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-const BUILD_ID = 'tilt-8';
+const BUILD_ID = 'tilt-9';
 
 // ============================================================
 // SECTION 1: CONFIGURATION
@@ -1599,6 +1599,10 @@ function startGame() {
     // On mobile with tilt: go to calibration first
     if (IS_MOBILE && window._tiltCtrl && !window._tiltCtrl.calibrated) {
         game.state = 'TILT_CALIBRATING';
+        game._calibTaps = 0;
+        game._calibDbg = 'none';
+        const cb = document.getElementById('calibrate-btn');
+        if (cb) cb.style.display = 'block';
     } else {
         game.state = 'PLAYING';
     }
@@ -2589,9 +2593,7 @@ function renderTiltCalibration(W, H, dpr, time) {
     ctx.fillText('Hold your device in your', cx, cy + 52 * s);
     ctx.fillText('preferred playing position', cx, cy + 68 * s);
 
-    // Button
-    const btnY = cy + 85 * s;
-    drawButton(cx, btnY, 'CALIBRATE & START', s, 220*s);
+    // Button is now an HTML element (#calibrate-btn) for iOS permission compat
 
     // DEBUG: tilt controller state
     const tc = window._tiltCtrl;
@@ -2602,17 +2604,9 @@ function renderTiltCalibration(W, H, dpr, time) {
         const lines = [
             `needsPerm:${tc._needsPermission} listening:${tc.listening} cal:${tc.calibrated}`,
             `beta:${tc.latestBeta.toFixed(1)} gamma:${tc.latestGamma.toFixed(1)}`,
-            `taps:${game._calibTaps||0} dbg:${game._calibDbg||'none'}`,
+            `dbg:${game._calibDbg||'none'}`,
         ];
         lines.forEach((l, i) => ctx.fillText(l, 10*s, (H - 60*s) + i * 13*s));
-    }
-
-    // After 3 taps, show force-start option
-    if ((game._calibTaps||0) >= 3) {
-        ctx.fillStyle = THEME.error;
-        ctx.font = `bold ${12*s}px ${THEME.fontBody}`;
-        ctx.textAlign = 'center';
-        ctx.fillText('Tap again to FORCE START (no tilt)', cx, btnY + 50*s);
     }
 }
 
@@ -3325,42 +3319,33 @@ if (IS_MOBILE) {
     const tiltCtrl = new TiltController(input);
     window._tiltCtrl = tiltCtrl; // expose for calibration screen
 
-    // Tap on canvas: handle menu taps AND tilt calibration (all in user gesture)
+    // Tap on canvas: menu interactions
     document.querySelector('canvas').addEventListener('touchstart', (e) => {
         if (e.target !== document.querySelector('canvas')) return;
-
-        if (game.state === 'TILT_CALIBRATING') {
-            e.preventDefault();
-            game._calibTaps = (game._calibTaps || 0) + 1;
-            game._calibDbg = 'tap#' + game._calibTaps;
-
-            // After 4+ taps, force start without tilt (fallback)
-            if (game._calibTaps >= 4) {
-                game._calibDbg = 'force-start';
-                game.state = 'PLAYING';
-                return;
-            }
-
-            const doCalibrate = () => {
-                game._calibDbg = 'calibrating...';
-                setTimeout(() => {
-                    tiltCtrl.calibrate();
-                    game.state = 'PLAYING';
-                    game._calibDbg = 'done!';
-                }, 300);
-            };
-            if (tiltCtrl._needsPermission) {
-                game._calibDbg = 'requesting iOS perm...';
-                tiltCtrl.requestiOSPermission(doCalibrate);
-            } else {
-                if (!tiltCtrl.listening) tiltCtrl._listen();
-                doCalibrate();
-            }
-            return;
-        }
-
         input._tapFlag = true;
-    }, { passive: false });
+    }, { passive: true });
+
+    // Calibrate button: HTML button with click event (iOS requires click for permissions)
+    const calibBtn = document.getElementById('calibrate-btn');
+    calibBtn.addEventListener('click', () => {
+        game._calibDbg = 'click!';
+        const doCalibrate = () => {
+            game._calibDbg = 'calibrating...';
+            calibBtn.style.display = 'none';
+            setTimeout(() => {
+                tiltCtrl.calibrate();
+                game.state = 'PLAYING';
+                game._calibDbg = 'done!';
+            }, 300);
+        };
+        if (tiltCtrl._needsPermission) {
+            game._calibDbg = 'requesting perm (click)...';
+            tiltCtrl.requestiOSPermission(doCalibrate);
+        } else {
+            if (!tiltCtrl.listening) tiltCtrl._listen();
+            doCalibrate();
+        }
+    });
 
     // Hide cursor style on mobile
     document.querySelector('canvas').style.cursor = 'default';
