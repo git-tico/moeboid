@@ -9,7 +9,7 @@
 // SECTION 0: PLATFORM DETECTION
 // ============================================================
 const IS_MOBILE = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-const BUILD_ID = 'tilt-11';
+const BUILD_ID = 'tilt-12';
 
 // Try to lock orientation to portrait (works on Android Chrome & PWAs)
 try { screen.orientation.lock('portrait').catch(() => {}); } catch(e) {}
@@ -22,7 +22,7 @@ const CONFIG = {
     PLAYER_ACCELERATION: 1200,
     PLAYER_FRICTION: 0.88,
     PLAYER_MAX_SPEED: 320,
-    PLAYER_SPEED_SIZE_EXPONENT: 0.25,
+    PLAYER_SPEED_SIZE_EXPONENT: 0,
 
     // Game
     START_LIVES: 3,
@@ -110,7 +110,7 @@ const THEME = {
 };
 
 // Player radius at each level (index = level, 1-7)
-const PLAYER_RADII = [0, 18, 22, 28, 36, 48, 64, 86];
+const PLAYER_RADII = [0, 18, 21, 25, 30, 36, 43, 52];
 
 // XP needed to reach each level (index = target level)
 // XP curve: steep exponential to compensate for higher XP rewards at higher levels
@@ -124,37 +124,37 @@ const SPECIES_TABLE = [
         xpReward: 5, speed: 100, behavior: 'wander',
     },
     {
-        level: 2, name: 'Drifter', radius: 14,
+        level: 2, name: 'Drifter', radius: 13,
         colors: { base: '#ff9966', light: '#ffbb99', dark: '#cc6633' },
         xpReward: 12, speed: 110, behavior: 'wander',
     },
     {
-        level: 3, name: 'Pulser', radius: 20,
+        level: 3, name: 'Pulser', radius: 17,
         colors: { base: '#ffdd44', light: '#ffee88', dark: '#ccaa22' },
         xpReward: 25, speed: 135, behavior: 'dasher',
     },
     {
-        level: 4, name: 'Seeker', radius: 28,
+        level: 4, name: 'Seeker', radius: 22,
         colors: { base: '#ff6699', light: '#ff99bb', dark: '#cc3366' },
         xpReward: 50, speed: 115, behavior: 'seek_prey',
     },
     {
-        level: 5, name: 'Bloater', radius: 40,
+        level: 5, name: 'Bloater', radius: 30,
         colors: { base: '#aa55cc', light: '#cc88ee', dark: '#7733aa' },
         xpReward: 100, speed: 60, behavior: 'slow_wander',
     },
     {
-        level: 6, name: 'Stalker', radius: 56,
+        level: 6, name: 'Stalker', radius: 40,
         colors: { base: '#44cccc', light: '#88eeee', dark: '#228888' },
         xpReward: 200, speed: 125, behavior: 'seek_prey',
     },
     {
-        level: 7, name: 'Apex', radius: 78,
+        level: 7, name: 'Apex', radius: 54,
         colors: { base: '#dd4444', light: '#ff7777', dark: '#aa2222' },
         xpReward: 400, speed: 145, behavior: 'hunt_player',
     },
     {
-        level: 8, name: 'Titan', radius: 110,
+        level: 8, name: 'Titan', radius: 72,
         colors: { base: '#ccccee', light: '#eeeeff', dark: '#9999bb' },
         xpReward: 0, speed: 90, behavior: 'patrol',
     },
@@ -929,9 +929,17 @@ class Player extends Amoeba {
         if (this.eatPulseTimer > 0) this.eatPulseTimer -= dt;
         if (this.speedBurstTimer > 0) this.speedBurstTimer -= dt;
 
+        // Dash timers
+        if (this.dashCooldown > 0) this.dashCooldown -= dt;
+        if (this.isDashing) {
+            this.dashTimer -= dt;
+            if (this.dashTimer <= 0) this.isDashing = false;
+        }
+
         // Speed cap based on size
         const sizeFactor = Math.pow(PLAYER_RADII[1] / this.radius, CONFIG.PLAYER_SPEED_SIZE_EXPONENT);
         let currentMaxSpeed = CONFIG.PLAYER_MAX_SPEED * sizeFactor;
+        if (this.isDashing) currentMaxSpeed *= 2.5;
         if (this.speedBurstTimer > 0) currentMaxSpeed *= TUNING.eatSpeedBoost;
         const speed = sqrt(this.vx * this.vx + this.vy * this.vy);
         if (speed > currentMaxSpeed) {
@@ -1001,6 +1009,30 @@ class Player extends Amoeba {
     makeInvincible() {
         this.invincible = true;
         this.invincibleTimer = CONFIG.INVINCIBILITY_TIME;
+    }
+
+    triggerDash(moveX, moveY) {
+        if (this.isDashing || this.dashCooldown > 0) return false;
+        this.isDashing = true;
+        this.dashTimer = 0.3;
+        this.dashCooldown = 2.5;
+        // Impulse in current movement direction (or facing direction)
+        const speed = sqrt(this.vx * this.vx + this.vy * this.vy);
+        let nx, ny;
+        if (speed > 5) {
+            nx = this.vx / speed;
+            ny = this.vy / speed;
+        } else if (moveX !== 0 || moveY !== 0) {
+            const mag = sqrt(moveX * moveX + moveY * moveY);
+            nx = moveX / mag;
+            ny = moveY / mag;
+        } else {
+            nx = 1; ny = 0; // fallback: dash right
+        }
+        const dashSpeed = CONFIG.PLAYER_MAX_SPEED * 2.5;
+        this.vx = nx * dashSpeed;
+        this.vy = ny * dashSpeed;
+        return true;
     }
 }
 
@@ -1655,6 +1687,7 @@ function respawnPlayer() {
     game.player.vx = 0;
     game.player.vy = 0;
     game.player.makeInvincible();
+    game.player.dashCooldown = 0; // ready to dash-escape
     game.state = 'PLAYING';
 }
 
@@ -3349,6 +3382,32 @@ if (IS_MOBILE) {
             doCalibrate();
         }
     });
+
+    // Dash button
+    const dashBtn = document.getElementById('dash-btn');
+    dashBtn.style.display = 'block';
+    dashBtn.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (game.state !== 'PLAYING' || !game.player) return;
+        const dashed = game.player.triggerDash(input.touchMoveX, input.touchMoveY);
+        if (dashed) {
+            dashBtn.classList.add('cooldown');
+            sound.playEat(1); // reuse eat sound as dash feedback
+        }
+    }, { passive: false });
+
+    // Update dash button cooldown visual every frame
+    const origRAF = window.requestAnimationFrame;
+    (function updateDashBtn() {
+        origRAF(updateDashBtn);
+        if (!game.player) return;
+        if (game.player.dashCooldown <= 0 && !game.player.isDashing) {
+            dashBtn.classList.remove('cooldown');
+        }
+        // Hide during non-play states
+        dashBtn.style.visibility = (game.state === 'PLAYING' || game.state === 'DYING') ? 'visible' : 'hidden';
+    })();
 
     // Hide cursor style on mobile
     document.querySelector('canvas').style.cursor = 'default';

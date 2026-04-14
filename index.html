@@ -61,6 +61,17 @@
             box-shadow: 0 0 20px rgba(105,254,165,0.35);
         }
         #calibrate-btn:active { opacity: 0.8; }
+        #dash-btn {
+            position: fixed; bottom: 24px; right: 24px;
+            width: 64px; height: 64px; border-radius: 50%;
+            background: rgba(105,254,165,0.2); border: 2px solid rgba(105,254,165,0.5);
+            color: #69fea5; font-size: 24px;
+            z-index: 20; display: none; cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+            transition: opacity 0.2s, transform 0.1s;
+        }
+        #dash-btn:active { transform: scale(0.9); }
+        #dash-btn.cooldown { opacity: 0.3; border-color: rgba(105,254,165,0.15); }
     </style>
 </head>
 <body>
@@ -70,6 +81,7 @@
     <div id="joystick-nub"></div>
     <button id="mobile-pause">⏸</button>
     <button id="calibrate-btn">CALIBRATE & START</button>
+    <button id="dash-btn">&#x26A1;</button>
     <script src="game.js"></script>
 </body>
 </html>
