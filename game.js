@@ -9,7 +9,7 @@
 // SECTION 0: PLATFORM DETECTION
 // ============================================================
 const IS_MOBILE = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-const BUILD_ID = 'tilt-7';
+const BUILD_ID = 'tilt-8';
 
 // ============================================================
 // SECTION 1: CONFIGURATION
@@ -1465,18 +1465,22 @@ class TiltController {
 
     requestiOSPermission(onGranted) {
         if (!this._needsPermission) { onGranted(); return; }
-        DeviceOrientationEvent.requestPermission()
-            .then(state => {
-                console.log('[Tilt] permission state:', state);
-                if (state === 'granted') {
-                    this._listen();
-                    this._needsPermission = false;
-                    onGranted();
-                } else {
-                    console.warn('[Tilt] permission denied:', state);
-                }
-            })
-            .catch(e => console.warn('[Tilt] permission error:', e));
+        try {
+            DeviceOrientationEvent.requestPermission()
+                .then(state => {
+                    game._calibDbg = 'perm:' + state;
+                    if (state === 'granted') {
+                        this._listen();
+                        this._needsPermission = false;
+                        onGranted();
+                    }
+                })
+                .catch(e => {
+                    game._calibDbg = 'catch:' + String(e).slice(0, 40);
+                });
+        } catch (e) {
+            game._calibDbg = 'throw:' + String(e).slice(0, 40);
+        }
     }
 
     _listen() {
