@@ -1806,17 +1806,20 @@ function update(dt) {
             if (input.consumeTap() || input.isPressed('Enter') || input.isPressed('Space')) {
                 const tc = window._tiltCtrl;
                 if (tc) {
-                    // Request iOS permission on user gesture if needed
                     if (tc._needsPermission) {
-                        tc.requestiOSPermission().then(() => {
-                            // Wait a frame for orientation data, then calibrate
-                            setTimeout(() => { tc.calibrate(); }, 100);
-                        });
+                        // iOS: permission was requested in touchstart handler
+                        // Wait for listener to start getting data, then calibrate
+                        setTimeout(() => {
+                            tc.calibrate();
+                            game.state = 'PLAYING';
+                        }, 300);
                     } else {
                         tc.calibrate();
+                        game.state = 'PLAYING';
                     }
+                } else {
+                    game.state = 'PLAYING';
                 }
-                game.state = 'PLAYING';
                 input.keys['Enter'] = false;
                 input.keys['Space'] = false;
             }
@@ -2125,6 +2128,22 @@ function renderHUD(W, H, dpr, time) {
     const s = dpr;
     ctx.save();
     ctx.textBaseline = 'top';
+
+    // ── DEBUG: Tilt info (temporary) ──
+    if (IS_MOBILE && window._tiltCtrl) {
+        const tc = window._tiltCtrl;
+        ctx.font = `${10*s}px monospace`;
+        ctx.fillStyle = '#ff0';
+        ctx.textAlign = 'left';
+        const dbg = [
+            `listening:${tc.listening} cal:${tc.calibrated} needsPerm:${tc._needsPermission}`,
+            `beta:${tc.latestBeta.toFixed(1)} gamma:${tc.latestGamma.toFixed(1)}`,
+            `calB:${tc.calibration.beta.toFixed(1)} calG:${tc.calibration.gamma.toFixed(1)}`,
+            `moveX:${input.touchMoveX.toFixed(2)} moveY:${input.touchMoveY.toFixed(2)}`,
+            `touchActive:${input.touchActive}`
+        ];
+        dbg.forEach((line, i) => ctx.fillText(line, 10*s, (H - 120*s) + i * 14*s));
+    }
 
     // ── Top-left: Score ──
     ctx.textAlign = 'left';
@@ -3276,7 +3295,6 @@ requestAnimationFrame(gameLoop);
 // ============================================================
 if (IS_MOBILE) {
     // Tilt mode: hide joystick, keep pause button
-    // document.getElementById('joystick-zone').style.display = 'block'; // disabled for tilt
     const pauseBtn = document.getElementById('mobile-pause');
     pauseBtn.style.display = 'block';
     pauseBtn.addEventListener('touchstart', (e) => {
@@ -3293,12 +3311,18 @@ if (IS_MOBILE) {
     const tiltCtrl = new TiltController(input);
     window._tiltCtrl = tiltCtrl; // expose for calibration screen
 
-    // Tap on canvas for menu interactions (since no joystick zone)
-    document.querySelector('canvas').addEventListener('touchstart', (e) => {
-        // Don't interfere with pause button
+    // Tap on canvas: handle menu taps AND iOS permission (must be in user gesture)
+    document.querySelector('canvas').addEventListener('touchstart', async (e) => {
         if (e.target !== document.querySelector('canvas')) return;
         input._tapFlag = true;
-    }, { passive: true });
+
+        // iOS requires permission request inside a direct user gesture
+        if (tiltCtrl._needsPermission && game.state === 'TILT_CALIBRATING') {
+            e.preventDefault();
+            const granted = await tiltCtrl.requestiOSPermission();
+            console.log('[Tilt] iOS permission:', granted);
+        }
+    }, { passive: false });
 
     // Hide cursor style on mobile
     document.querySelector('canvas').style.cursor = 'default';
