@@ -9,7 +9,7 @@
 // SECTION 0: PLATFORM DETECTION
 // ============================================================
 const IS_MOBILE = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-const BUILD_ID = 'tilt-12';
+const BUILD_ID = 'tilt-13';
 
 // Try to lock orientation to portrait (works on Android Chrome & PWAs)
 try { screen.orientation.lock('portrait').catch(() => {}); } catch(e) {}
@@ -22,7 +22,7 @@ const CONFIG = {
     PLAYER_ACCELERATION: 1200,
     PLAYER_FRICTION: 0.88,
     PLAYER_MAX_SPEED: 320,
-    PLAYER_SPEED_SIZE_EXPONENT: 0,
+    PLAYER_SPEED_SIZE_EXPONENT: -0.15,
 
     // Game
     START_LIVES: 3,
@@ -3103,6 +3103,12 @@ handleResize();
 
 document.addEventListener('visibilitychange', () => {
     if (document.hidden && game.state === 'PLAYING') {
+        game.state = 'PAUSED';
+    }
+});
+// iOS fallback: blur fires when switching apps or pulling Control Center
+window.addEventListener('blur', () => {
+    if (game.state === 'PLAYING') {
         game.state = 'PAUSED';
     }
 });
