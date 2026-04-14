@@ -9,7 +9,7 @@
 // SECTION 0: PLATFORM DETECTION
 // ============================================================
 const IS_MOBILE = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-const BUILD_ID = 'tilt-13';
+const BUILD_ID = 'tilt-14';
 
 // Try to lock orientation to portrait (works on Android Chrome & PWAs)
 try { screen.orientation.lock('portrait').catch(() => {}); } catch(e) {}
@@ -19,9 +19,9 @@ try { screen.orientation.lock('portrait').catch(() => {}); } catch(e) {}
 // ============================================================
 const CONFIG = {
     // Player
-    PLAYER_ACCELERATION: 1200,
-    PLAYER_FRICTION: 0.88,
-    PLAYER_MAX_SPEED: 320,
+    PLAYER_ACCELERATION: 2400,
+    PLAYER_FRICTION: 0.90,
+    PLAYER_MAX_SPEED: 500,
     PLAYER_SPEED_SIZE_EXPONENT: -0.15,
 
     // Game
@@ -1478,8 +1478,8 @@ class TiltController {
         this.input = inputHandler;
         this.calibration = { beta: 0, gamma: 0 };
         this.calibrated = false;
-        this.maxAngle = 18;   // degrees for full speed (lower = more sensitive)
-        this.deadZone = 2;    // degrees ignored (hand tremor)
+        this.maxAngle = 12;   // degrees for full speed (lower = more sensitive)
+        this.deadZone = 1.5;  // degrees ignored (hand tremor)
         this.latestBeta = 0;
         this.latestGamma = 0;
         this.listening = false;
