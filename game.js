@@ -573,7 +573,7 @@ class MusicManager {
     // Called from game loop to keep music evolving
     update(state, level) {
         if (!this.playing) return;
-        const mood = state === 'MENU' || state === 'ONBOARDING' ? 'menu' :
+        const mood = state === 'MENU' || state === 'ONBOARDING' || state === 'TILT_CALIBRATING' ? 'menu' :
                      state === 'PLAYING' || state === 'DYING' ? 'playing' :
                      state === 'PAUSED' ? 'paused' :
                      state === 'GAME_OVER' ? 'gameover' : 'menu';
@@ -1435,6 +1435,83 @@ class TouchController {
 }
 
 // ============================================================
+// SECTION 10c: TILT CONTROLLER (DeviceOrientation)
+// ============================================================
+class TiltController {
+    constructor(inputHandler) {
+        this.input = inputHandler;
+        this.calibration = { beta: 0, gamma: 0 };
+        this.calibrated = false;
+        this.maxAngle = 30;   // degrees for full speed
+        this.deadZone = 3;    // degrees ignored (hand tremor)
+        this.latestBeta = 0;
+        this.latestGamma = 0;
+        this.listening = false;
+        this._requestPermission();
+    }
+
+    async _requestPermission() {
+        if (typeof DeviceOrientationEvent !== 'undefined' &&
+            typeof DeviceOrientationEvent.requestPermission === 'function') {
+            // iOS 13+ requires explicit permission from a user gesture
+            // We'll defer to the calibration screen tap
+            this._needsPermission = true;
+        } else {
+            this._needsPermission = false;
+            this._listen();
+        }
+    }
+
+    async requestiOSPermission() {
+        if (!this._needsPermission) return true;
+        try {
+            const perm = await DeviceOrientationEvent.requestPermission();
+            if (perm === 'granted') {
+                this._listen();
+                this._needsPermission = false;
+                return true;
+            }
+        } catch (e) { console.warn('Tilt permission denied', e); }
+        return false;
+    }
+
+    _listen() {
+        if (this.listening) return;
+        this.listening = true;
+        window.addEventListener('deviceorientation', e => this._onTilt(e));
+    }
+
+    calibrate() {
+        this.calibration.beta = this.latestBeta;
+        this.calibration.gamma = this.latestGamma;
+        this.calibrated = true;
+        this.input.touchActive = true;
+    }
+
+    _onTilt(e) {
+        this.latestBeta = e.beta || 0;
+        this.latestGamma = e.gamma || 0;
+
+        if (!this.calibrated) return;
+
+        let rawX = this.latestGamma - this.calibration.gamma; // left/right
+        let rawY = this.latestBeta - this.calibration.beta;   // forward/back
+
+        this.input.touchMoveX = this._normalize(rawX);
+        this.input.touchMoveY = this._normalize(rawY);
+    }
+
+    _normalize(angle) {
+        if (Math.abs(angle) < this.deadZone) return 0;
+        const sign = Math.sign(angle);
+        const mag = Math.min(
+            (Math.abs(angle) - this.deadZone) / (this.maxAngle - this.deadZone), 1
+        );
+        return sign * mag;
+    }
+}
+
+// ============================================================
 // SECTION 11: SCREEN SHAKE
 // ============================================================
 const screenShake = { x: 0, y: 0, intensity: 0, duration: 0, maxDuration: 0 };
@@ -1511,7 +1588,12 @@ function startGame() {
         music.start();
     }
 
-    game.state = 'PLAYING';
+    // On mobile with tilt: go to calibration first
+    if (IS_MOBILE && window._tiltCtrl && !window._tiltCtrl.calibrated) {
+        game.state = 'TILT_CALIBRATING';
+    } else {
+        game.state = 'PLAYING';
+    }
     game.score = 0;
     game.lives = CONFIG.START_LIVES;
     game.totalEaten = 0;
@@ -1719,6 +1801,27 @@ function update(dt) {
             }
             break;
 
+        case 'TILT_CALIBRATING':
+            // Wait for tap to calibrate tilt controller
+            if (input.consumeTap() || input.isPressed('Enter') || input.isPressed('Space')) {
+                const tc = window._tiltCtrl;
+                if (tc) {
+                    // Request iOS permission on user gesture if needed
+                    if (tc._needsPermission) {
+                        tc.requestiOSPermission().then(() => {
+                            // Wait a frame for orientation data, then calibrate
+                            setTimeout(() => { tc.calibrate(); }, 100);
+                        });
+                    } else {
+                        tc.calibrate();
+                    }
+                }
+                game.state = 'PLAYING';
+                input.keys['Enter'] = false;
+                input.keys['Space'] = false;
+            }
+            break;
+
         case 'PLAYING':
             // Player
             game.player.update(dt, input, game.dishRadius);
@@ -1837,6 +1940,11 @@ function render(time) {
 
     if (game.state === 'ONBOARDING') {
         renderOnboarding(W, H, dpr, time);
+        return;
+    }
+
+    if (game.state === 'TILT_CALIBRATING') {
+        renderTiltCalibration(W, H, dpr, time);
         return;
     }
 
@@ -2406,6 +2514,73 @@ function renderMenu(W, H, dpr, time) {
     ctx.fillText("Inspired by ZapSpot's Moeboid (2000)", W/2, H - 20*s);
 
     ctx.restore();
+}
+
+function renderTiltCalibration(W, H, dpr, time) {
+    const s = dpr;
+    const cx = W / 2;
+    const cy = H / 2;
+
+    // Dark overlay
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(0, 0, W, H);
+
+    // Glass panel
+    const pw = 320 * s;
+    const ph = 220 * s;
+    drawGlassPanel(cx - pw / 2, cy - ph / 2, pw, ph, 12 * s);
+
+    // Phone icon (simple tilt illustration)
+    const iconY = cy - 40 * s;
+    const wobble = Math.sin(time / 600) * 0.15;
+    ctx.save();
+    ctx.translate(cx, iconY);
+    ctx.rotate(wobble);
+    ctx.strokeStyle = THEME.primary;
+    ctx.lineWidth = 2 * s;
+    ctx.beginPath();
+    ctx.roundRect(-20 * s, -30 * s, 40 * s, 60 * s, 6 * s);
+    ctx.stroke();
+    // Screen dot
+    ctx.fillStyle = THEME.primary;
+    ctx.beginPath();
+    ctx.arc(0, 5 * s, 3 * s, 0, TWO_PI);
+    ctx.fill();
+    ctx.restore();
+
+    // Tilt arrows
+    ctx.strokeStyle = THEME.secondary;
+    ctx.lineWidth = 1.5 * s;
+    const arrowR = 45 * s;
+    for (let i = 0; i < 4; i++) {
+        const a = i * Math.PI / 2;
+        const ax = cx + Math.cos(a) * arrowR;
+        const ay = iconY + Math.sin(a) * arrowR;
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(a) * 30 * s, iconY + Math.sin(a) * 30 * s);
+        ctx.lineTo(ax, ay);
+        ctx.stroke();
+    }
+
+    // Title
+    ctx.fillStyle = THEME.onSurface;
+    ctx.font = `bold ${18 * s}px ${THEME.fontHeadline}`;
+    ctx.textAlign = 'center';
+    ctx.fillText('TILT CONTROL', cx, cy + 30 * s);
+
+    // Instruction
+    ctx.fillStyle = THEME.onSurfaceVar;
+    ctx.font = `${13 * s}px ${THEME.fontBody}`;
+    ctx.fillText('Hold your device in your', cx, cy + 52 * s);
+    ctx.fillText('preferred playing position', cx, cy + 68 * s);
+
+    // Button
+    const btnW = 200 * s;
+    const btnH = 44 * s;
+    const btnX = cx - btnW / 2;
+    const btnY = cy + 80 * s;
+    const pulse = 0.5 + 0.5 * Math.sin(time / 400);
+    drawButton(btnX, btnY, btnW, btnH, 'CALIBRATE & START', 14 * s, pulse);
 }
 
 function renderOnboarding(W, H, dpr, time) {
@@ -3100,8 +3275,8 @@ requestAnimationFrame(gameLoop);
 // SECTION: MOBILE CONTROLS INIT
 // ============================================================
 if (IS_MOBILE) {
-    // Show joystick zone and pause button
-    document.getElementById('joystick-zone').style.display = 'block';
+    // Tilt mode: hide joystick, keep pause button
+    // document.getElementById('joystick-zone').style.display = 'block'; // disabled for tilt
     const pauseBtn = document.getElementById('mobile-pause');
     pauseBtn.style.display = 'block';
     pauseBtn.addEventListener('touchstart', (e) => {
@@ -3114,8 +3289,16 @@ if (IS_MOBILE) {
         }
     }, { passive: false });
 
-    // Initialize touch controller
-    new TouchController(input);
+    // Initialize tilt controller (replaces touch controller)
+    const tiltCtrl = new TiltController(input);
+    window._tiltCtrl = tiltCtrl; // expose for calibration screen
+
+    // Tap on canvas for menu interactions (since no joystick zone)
+    document.querySelector('canvas').addEventListener('touchstart', (e) => {
+        // Don't interfere with pause button
+        if (e.target !== document.querySelector('canvas')) return;
+        input._tapFlag = true;
+    }, { passive: true });
 
     // Hide cursor style on mobile
     document.querySelector('canvas').style.cursor = 'default';
