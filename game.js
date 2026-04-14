@@ -1802,27 +1802,9 @@ function update(dt) {
             break;
 
         case 'TILT_CALIBRATING':
-            // Wait for tap to calibrate tilt controller
-            if (input.consumeTap() || input.isPressed('Enter') || input.isPressed('Space')) {
-                const tc = window._tiltCtrl;
-                if (tc) {
-                    if (tc._needsPermission) {
-                        // iOS: permission was requested in touchstart handler
-                        // Wait for listener to start getting data, then calibrate
-                        setTimeout(() => {
-                            tc.calibrate();
-                            game.state = 'PLAYING';
-                        }, 300);
-                    } else {
-                        tc.calibrate();
-                        game.state = 'PLAYING';
-                    }
-                } else {
-                    game.state = 'PLAYING';
-                }
-                input.keys['Enter'] = false;
-                input.keys['Space'] = false;
-            }
+            // Calibration is handled directly in the touchstart handler
+            // (iOS requires permission request inside user gesture context)
+            // This state just renders the calibration screen and waits.
             break;
 
         case 'PLAYING':
@@ -3311,17 +3293,32 @@ if (IS_MOBILE) {
     const tiltCtrl = new TiltController(input);
     window._tiltCtrl = tiltCtrl; // expose for calibration screen
 
-    // Tap on canvas: handle menu taps AND iOS permission (must be in user gesture)
+    // Tap on canvas: handle menu taps AND tilt calibration (all in user gesture)
     document.querySelector('canvas').addEventListener('touchstart', async (e) => {
         if (e.target !== document.querySelector('canvas')) return;
-        input._tapFlag = true;
 
-        // iOS requires permission request inside a direct user gesture
-        if (tiltCtrl._needsPermission && game.state === 'TILT_CALIBRATING') {
+        if (game.state === 'TILT_CALIBRATING') {
             e.preventDefault();
-            const granted = await tiltCtrl.requestiOSPermission();
-            console.log('[Tilt] iOS permission:', granted);
+            // Step 1: Request iOS permission if needed (must be in user gesture)
+            if (tiltCtrl._needsPermission) {
+                const granted = await tiltCtrl.requestiOSPermission();
+                console.log('[Tilt] iOS permission:', granted);
+                if (!granted) return; // user denied, stay on calibration screen
+            }
+            // Step 2: If not listening yet (shouldn't happen on Android, but safety)
+            if (!tiltCtrl.listening) {
+                tiltCtrl._listen();
+            }
+            // Step 3: Wait a moment for orientation data to arrive, then calibrate
+            setTimeout(() => {
+                tiltCtrl.calibrate();
+                game.state = 'PLAYING';
+                console.log('[Tilt] Calibrated!', tiltCtrl.calibration);
+            }, 200);
+            return; // don't set tapFlag, we handle state change here
         }
+
+        input._tapFlag = true;
     }, { passive: false });
 
     // Hide cursor style on mobile
