@@ -9,7 +9,7 @@
 // SECTION 0: PLATFORM DETECTION
 // ============================================================
 const IS_MOBILE = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-const BUILD_ID = 'tilt-6';
+const BUILD_ID = 'tilt-7';
 
 // ============================================================
 // SECTION 1: CONFIGURATION
@@ -2586,12 +2586,8 @@ function renderTiltCalibration(W, H, dpr, time) {
     ctx.fillText('preferred playing position', cx, cy + 68 * s);
 
     // Button
-    const btnW = 200 * s;
-    const btnH = 44 * s;
-    const btnX = cx - btnW / 2;
-    const btnY = cy + 80 * s;
-    const pulse = 0.5 + 0.5 * Math.sin(time / 400);
-    drawButton(btnX, btnY, btnW, btnH, 'CALIBRATE & START', 14 * s, pulse);
+    const btnY = cy + 85 * s;
+    drawButton(cx, btnY, 'CALIBRATE & START', s, 220*s);
 
     // DEBUG: tilt controller state
     const tc = window._tiltCtrl;
@@ -2612,7 +2608,7 @@ function renderTiltCalibration(W, H, dpr, time) {
         ctx.fillStyle = THEME.error;
         ctx.font = `bold ${12*s}px ${THEME.fontBody}`;
         ctx.textAlign = 'center';
-        ctx.fillText('Tap again to FORCE START (no tilt)', cx, btnY + btnH + 30*s);
+        ctx.fillText('Tap again to FORCE START (no tilt)', cx, btnY + 50*s);
     }
 }
 
