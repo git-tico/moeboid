@@ -9,7 +9,7 @@
 // SECTION 0: PLATFORM DETECTION
 // ============================================================
 const IS_MOBILE = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-const BUILD_ID = 'tilt-15';
+const BUILD_ID = 'tilt-16';
 
 // Try to lock orientation to portrait (works on Android Chrome & PWAs)
 try { screen.orientation.lock('portrait').catch(() => {}); } catch(e) {}
@@ -2587,27 +2587,12 @@ function renderTiltCalibration(W, H, dpr, time) {
     ctx.textAlign = 'center';
     ctx.fillText('TILT CONTROL', cx, cy + 30 * s);
 
-    // Instruction
-    ctx.fillStyle = THEME.onSurfaceVar;
-    ctx.font = `${13 * s}px ${THEME.fontBody}`;
-    ctx.fillText('Hold your device in your', cx, cy + 52 * s);
-    ctx.fillText('preferred playing position', cx, cy + 68 * s);
+    // Instruction — single line, above the button area
+    ctx.fillStyle = colorWithAlpha(THEME.onSurfaceVar, 0.6);
+    ctx.font = `${11 * s}px ${THEME.fontBody}`;
+    ctx.fillText('Hold in your preferred playing position', cx, cy + 50 * s);
 
-    // Button is now an HTML element (#calibrate-btn) for iOS permission compat
-
-    // DEBUG: tilt controller state
-    const tc = window._tiltCtrl;
-    if (tc) {
-        ctx.font = `${9*s}px monospace`;
-        ctx.fillStyle = '#ff0';
-        ctx.textAlign = 'left';
-        const lines = [
-            `needsPerm:${tc._needsPermission} listening:${tc.listening} cal:${tc.calibrated}`,
-            `beta:${tc.latestBeta.toFixed(1)} gamma:${tc.latestGamma.toFixed(1)}`,
-            `dbg:${game._calibDbg||'none'}`,
-        ];
-        lines.forEach((l, i) => ctx.fillText(l, 10*s, (H - 60*s) + i * 13*s));
-    }
+    // Button is an HTML element (#calibrate-btn) positioned below this text
 }
 
 function renderOnboarding(W, H, dpr, time) {
