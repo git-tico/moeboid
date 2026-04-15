@@ -9,7 +9,7 @@
 // SECTION 0: PLATFORM DETECTION
 // ============================================================
 const IS_MOBILE = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-const BUILD_ID = 'tilt-16';
+const BUILD_ID = 'tilt-17';
 
 // Try to lock orientation to portrait (works on Android Chrome & PWAs)
 try { screen.orientation.lock('portrait').catch(() => {}); } catch(e) {}
@@ -2933,7 +2933,7 @@ function renderGameOver(W, H, dpr) {
             ctx.beginPath(); ctx.moveTo(dx+dotR+2*s, dotY); ctx.lineTo(dx+dotSpacing-dotR-2*s, dotY); ctx.stroke();
         }
     }
-    cy += 78*s;
+    cy += 90*s;
 
     // Play again button
     ctx.font = `700 ${14*s}px ${THEME.fontHeadline}`;
@@ -3021,7 +3021,7 @@ function renderPaused(W, H, dpr) {
 
     // Resume button
     ctx.font = `700 ${14*s}px ${THEME.fontHeadline}`;
-    drawButton(W/2, cy, IS_MOBILE ? '▶  TAP TO RESUME' : '▶  RESUME', s, 220*s);
+    drawButton(W/2, cy + 16*s, IS_MOBILE ? 'TAP TO RESUME' : 'RESUME', s, 220*s);
 
     // Metadata
     ctx.font = `500 ${8*s}px ${THEME.fontLabel}`;
