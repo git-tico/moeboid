@@ -9,7 +9,7 @@
 // SECTION 0: PLATFORM DETECTION
 // ============================================================
 const IS_MOBILE = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-const BUILD_ID = 'tilt-14';
+const BUILD_ID = 'tilt-15';
 
 // Try to lock orientation to portrait (works on Android Chrome & PWAs)
 try { screen.orientation.lock('portrait').catch(() => {}); } catch(e) {}
@@ -359,7 +359,7 @@ class MusicManager {
         this.ctx = audioCtx;
         // Separate gain for music (lower than SFX)
         this.masterGain = this.ctx.createGain();
-        this.masterGain.gain.value = 0.18;
+        this.masterGain.gain.value = 0.35;
         this.masterGain.connect(masterGain);
     }
 
@@ -2159,22 +2159,6 @@ function renderHUD(W, H, dpr, time) {
     ctx.save();
     ctx.textBaseline = 'top';
 
-    // ── DEBUG: Tilt info (temporary) ──
-    if (IS_MOBILE && window._tiltCtrl) {
-        const tc = window._tiltCtrl;
-        ctx.font = `${10*s}px monospace`;
-        ctx.fillStyle = '#ff0';
-        ctx.textAlign = 'left';
-        const dbg = [
-            `listening:${tc.listening} cal:${tc.calibrated} needsPerm:${tc._needsPermission}`,
-            `beta:${tc.latestBeta.toFixed(1)} gamma:${tc.latestGamma.toFixed(1)}`,
-            `calB:${tc.calibration.beta.toFixed(1)} calG:${tc.calibration.gamma.toFixed(1)}`,
-            `moveX:${input.touchMoveX.toFixed(2)} moveY:${input.touchMoveY.toFixed(2)}`,
-            `touchActive:${input.touchActive}`
-        ];
-        dbg.forEach((line, i) => ctx.fillText(line, 10*s, (H - 120*s) + i * 14*s));
-    }
-
     // ── Top-left: Score ──
     ctx.textAlign = 'left';
     ctx.font = `500 ${9*s}px ${THEME.fontLabel}`;
@@ -2182,10 +2166,12 @@ function renderHUD(W, H, dpr, time) {
     ctx.fillText('DATA POINTS', 18*s, 16*s);
     ctx.font = `700 ${26*s}px ${THEME.fontHeadline}`;
     ctx.fillStyle = THEME.onSurface;
-    ctx.fillText(game.score.toLocaleString(), 18*s, 28*s);
-    ctx.font = `500 ${12*s}px ${THEME.fontLabel}`;
+    const scoreStr = game.score.toLocaleString();
+    ctx.fillText(scoreStr, 18*s, 28*s);
+    const scoreW = ctx.measureText(scoreStr).width;
+    ctx.font = `500 ${11*s}px ${THEME.fontLabel}`;
     ctx.fillStyle = colorWithAlpha(THEME.primary, 0.7);
-    ctx.fillText(' PTS', 18*s + ctx.measureText(game.score.toLocaleString()).width + 2*s, 36*s);
+    ctx.fillText('PTS', 18*s + scoreW + 4*s, 28*s);
 
     // ── Top-center: Level ──
     const specName = game.player.level <= 8 ? getSpecies(min(game.player.level, 8)).name.toUpperCase() : 'TITAN';
@@ -2214,39 +2200,20 @@ function renderHUD(W, H, dpr, time) {
     ctx.fillStyle = lineGrad;
     ctx.fillRect(W/2-lineW, 42*s, lineW*2, 1*s);
 
-    // ── Top-right: Predator warning ──
-    ctx.textAlign = 'right';
+    // ── Top-center: "AVOID" below level box ──
     if (game.player.level < 7) {
         const predatorSpec = getSpecies(game.player.level + 1);
         if (predatorSpec) {
-            const rx = W - 18*s;
-            ctx.font = `500 ${9*s}px ${THEME.fontLabel}`;
-            ctx.fillStyle = colorWithAlpha(THEME.error, 0.6);
-            ctx.fillText('HAZARD WARNING', rx, 16*s);
-            // warning box
-            const warnText = `AVOID: ${predatorSpec.name.toLowerCase()}`;
-            ctx.font = `700 ${13*s}px ${THEME.fontHeadline}`;
-            const warnW = ctx.measureText(warnText).width + 36*s;
-            const warnBx = rx - warnW, warnBy = 30*s;
-            ctx.fillStyle = colorWithAlpha(THEME.error, 0.08);
-            roundRect(ctx, warnBx, warnBy, warnW, 24*s, 3*s);
-            ctx.fill();
-            // red right border
-            ctx.fillStyle = colorWithAlpha(THEME.error, 0.5);
-            ctx.fillRect(rx - 2*s, warnBy, 2*s, 24*s);
-            // warning icon (triangle)
-            ctx.fillStyle = colorWithAlpha(THEME.error, 0.7 + 0.3*sin(time*4));
-            ctx.font = `700 ${13*s}px ${THEME.fontHeadline}`;
-            ctx.textAlign = 'left';
-            ctx.fillText('⚠', warnBx + 8*s, 33*s);
-            ctx.textAlign = 'right';
-            ctx.fillStyle = THEME.onSurface;
-            ctx.fillText(warnText, rx - 6*s, 33*s);
+            ctx.textAlign = 'center';
+            ctx.font = `700 ${11*s}px ${THEME.fontHeadline}`;
+            ctx.fillStyle = colorWithAlpha(THEME.error, 0.8);
+            ctx.fillText(`⚠ AVOID: ${predatorSpec.name.toLowerCase()}`, W/2, 50*s);
         }
     } else {
-        ctx.font = `700 ${13*s}px ${THEME.fontHeadline}`;
+        ctx.textAlign = 'center';
+        ctx.font = `700 ${11*s}px ${THEME.fontHeadline}`;
         ctx.fillStyle = colorWithAlpha(THEME.primary, 0.7);
-        ctx.fillText('⬢ APEX PREDATOR', W - 18*s, 30*s);
+        ctx.fillText('⬢ APEX PREDATOR', W/2, 50*s);
     }
 
     // ── Bottom-left: Lives ──
@@ -2416,15 +2383,12 @@ function renderLevelUpFlash(W, H, dpr) {
     const alpha = clamp(game.levelUpFlashTimer / 2.0, 0, 1);
 
     ctx.save();
-    // Overlay
-    ctx.fillStyle = colorWithAlpha('#000', alpha * 0.35);
-    ctx.fillRect(0, 0, W, H);
-
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
 
-    // Radial burst
-    const burstGrad = ctx.createRadialGradient(W/2, H*0.35, 0, W/2, H*0.35, 250*s);
-    burstGrad.addColorStop(0, colorWithAlpha(THEME.primary, 0.12*alpha));
+    // Radial burst — centered in top HUD area
+    const burstY = 60*s;
+    const burstGrad = ctx.createRadialGradient(W/2, burstY, 0, W/2, burstY, 180*s);
+    burstGrad.addColorStop(0, colorWithAlpha(THEME.primary, 0.15*alpha));
     burstGrad.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = burstGrad;
     ctx.fillRect(0, 0, W, H);
@@ -2433,22 +2397,22 @@ function renderLevelUpFlash(W, H, dpr) {
     ctx.font = `500 ${10*s}px ${THEME.fontLabel}`;
     ctx.fillStyle = colorWithAlpha(THEME.primary, 0.5*alpha);
     ctx.letterSpacing = `${3*s}px`;
-    ctx.fillText('SEQUENCE COMPLETE', W/2, H*0.35 - 50*s);
+    ctx.fillText('SEQUENCE COMPLETE', W/2, 10*s);
     ctx.letterSpacing = '0px';
 
-    // "LEVEL X!" text
-    ctx.font = `700 ${64*s}px ${THEME.fontHeadline}`;
+    // "LEVEL X!" text — positioned where level box normally sits
+    ctx.font = `700 ${54*s}px ${THEME.fontHeadline}`;
     ctx.fillStyle = colorWithAlpha(THEME.primary, alpha*0.95);
     ctx.shadowBlur = 25*s;
     ctx.shadowColor = colorWithAlpha(THEME.primary, 0.7);
-    ctx.fillText(`LEVEL ${game.levelUpFlashLevel}!`, W/2, H*0.35);
+    ctx.fillText(`LEVEL ${game.levelUpFlashLevel}!`, W/2, 42*s);
     ctx.shadowBlur = 0;
 
-    // Unlock card
+    // Unlock card — compact, in top HUD area
     if (game.levelUpFlashLevel <= 7) {
         const nowEdible = getSpecies(game.levelUpFlashLevel);
-        const cardW = 260*s, cardH = 80*s;
-        const cardX = W/2 - cardW/2, cardY = H*0.35 + 45*s;
+        const cardW = 240*s, cardH = 65*s;
+        const cardX = W/2 - cardW/2, cardY = 72*s;
 
         // glass panel
         ctx.globalAlpha = alpha;
@@ -2456,13 +2420,13 @@ function renderLevelUpFlash(W, H, dpr) {
         ctx.globalAlpha = 1;
 
         // "EVOLUTIONARY UNLOCK"
-        ctx.font = `700 ${9*s}px ${THEME.fontLabel}`;
+        ctx.font = `700 ${8*s}px ${THEME.fontLabel}`;
         ctx.fillStyle = colorWithAlpha(THEME.primary, 0.6*alpha);
-        ctx.fillText('EVOLUTIONARY UNLOCK', W/2, cardY + 14*s);
+        ctx.fillText('EVOLUTIONARY UNLOCK', W/2, cardY + 12*s);
 
         // Species circle
-        const circR = 16*s;
-        const circX = W/2 - 60*s, circY = cardY + 50*s;
+        const circR = 14*s;
+        const circX = W/2 - 50*s, circY = cardY + 42*s;
         ctx.beginPath(); ctx.arc(circX, circY, circR, 0, TWO_PI);
         ctx.fillStyle = colorWithAlpha(nowEdible.colors.base, 0.8*alpha);
         ctx.fill();
@@ -2474,12 +2438,12 @@ function renderLevelUpFlash(W, H, dpr) {
 
         // "You can now eat: PULSER"
         ctx.textAlign = 'left';
-        ctx.font = `400 ${12*s}px ${THEME.fontBody}`;
+        ctx.font = `400 ${11*s}px ${THEME.fontBody}`;
         ctx.fillStyle = colorWithAlpha(THEME.onSurface, 0.6*alpha);
-        ctx.fillText('You can now eat:', circX + circR + 12*s, circY - 8*s);
-        ctx.font = `700 ${18*s}px ${THEME.fontHeadline}`;
+        ctx.fillText('You can now eat:', circX + circR + 10*s, circY - 7*s);
+        ctx.font = `700 ${16*s}px ${THEME.fontHeadline}`;
         ctx.fillStyle = colorWithAlpha(nowEdible.colors.base, alpha);
-        ctx.fillText(nowEdible.name.toUpperCase(), circX + circR + 12*s, circY + 10*s);
+        ctx.fillText(nowEdible.name.toUpperCase(), circX + circR + 10*s, circY + 9*s);
     }
 
     ctx.restore();
@@ -2883,77 +2847,77 @@ function renderGameOver(W, H, dpr) {
 
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
 
-    // Label
+    // Label — moved up
     ctx.font = `500 ${10*s}px ${THEME.fontLabel}`;
     ctx.fillStyle = THEME.errorDim;
     ctx.letterSpacing = `${3*s}px`;
-    ctx.fillText('BIOLOGICAL SYSTEM FAILURE', W/2, H*0.18);
+    ctx.fillText('BIOLOGICAL SYSTEM FAILURE', W/2, H*0.12);
     ctx.letterSpacing = '0px';
 
-    // "GAME OVER"
-    ctx.font = `700 ${56*s}px ${THEME.fontHeadline}`;
+    // "GAME OVER" — moved up
+    ctx.font = `700 ${52*s}px ${THEME.fontHeadline}`;
     ctx.fillStyle = THEME.error;
     ctx.shadowBlur = 25*s;
     ctx.shadowColor = colorWithAlpha(THEME.error, 0.6);
-    ctx.fillText('GAME OVER', W/2, H*0.26);
+    ctx.fillText('GAME OVER', W/2, H*0.20);
     ctx.shadowBlur = 0;
 
-    // Stat cards
-    const cardW = min(280*s, W*0.8);
-    const cardH = 55*s;
+    // Stat cards — more compact
+    const cardW = min(270*s, W*0.8);
+    const cardH = 46*s;
     const cardX = W/2 - cardW/2;
-    const cardGap = 8*s;
-    let cy = H*0.36;
+    const cardGap = 6*s;
+    let cy = H*0.29;
 
     // Score card
     drawGlassPanel(cardX, cy, cardW, cardH, 8*s);
-    ctx.font = `500 ${9*s}px ${THEME.fontLabel}`;
+    ctx.font = `500 ${8*s}px ${THEME.fontLabel}`;
     ctx.fillStyle = colorWithAlpha(THEME.onSurfaceVar, 0.7);
-    ctx.fillText('FINAL SCORE', W/2, cy + 16*s);
-    ctx.font = `700 ${24*s}px ${THEME.fontHeadline}`;
+    ctx.fillText('FINAL SCORE', W/2, cy + 13*s);
+    ctx.font = `700 ${22*s}px ${THEME.fontHeadline}`;
     ctx.fillStyle = THEME.primary;
-    ctx.fillText(game.score.toLocaleString(), W/2, cy + 38*s);
+    ctx.fillText(game.score.toLocaleString(), W/2, cy + 33*s);
     cy += cardH + cardGap;
 
     // Level card
     drawGlassPanel(cardX, cy, cardW, cardH, 8*s);
-    ctx.font = `500 ${9*s}px ${THEME.fontLabel}`;
+    ctx.font = `500 ${8*s}px ${THEME.fontLabel}`;
     ctx.fillStyle = colorWithAlpha(THEME.onSurfaceVar, 0.7);
-    ctx.fillText('STATUS REACHED', W/2, cy + 16*s);
+    ctx.fillText('STATUS REACHED', W/2, cy + 13*s);
     const reachedSpec = getSpecies(min(game.player.maxLevel, 8));
-    ctx.font = `700 ${20*s}px ${THEME.fontHeadline}`;
+    ctx.font = `700 ${18*s}px ${THEME.fontHeadline}`;
     ctx.fillStyle = THEME.secondary;
-    ctx.fillText(`LEVEL ${game.player.maxLevel} — ${reachedSpec.name.toUpperCase()}`, W/2, cy + 38*s);
+    ctx.fillText(`LEVEL ${game.player.maxLevel} — ${reachedSpec.name.toUpperCase()}`, W/2, cy + 33*s);
     cy += cardH + cardGap;
 
     // Eaten card
     drawGlassPanel(cardX, cy, cardW, cardH, 8*s);
-    ctx.font = `500 ${9*s}px ${THEME.fontLabel}`;
+    ctx.font = `500 ${8*s}px ${THEME.fontLabel}`;
     ctx.fillStyle = colorWithAlpha(THEME.onSurfaceVar, 0.7);
-    ctx.fillText('AMOEBAS ASSIMILATED', W/2, cy + 16*s);
-    ctx.font = `700 ${24*s}px ${THEME.fontHeadline}`;
+    ctx.fillText('AMOEBAS ASSIMILATED', W/2, cy + 13*s);
+    ctx.font = `700 ${22*s}px ${THEME.fontHeadline}`;
     ctx.fillStyle = THEME.onSurface;
-    ctx.fillText(game.totalEaten.toString(), W/2, cy + 38*s);
-    cy += cardH + cardGap + 8*s;
+    ctx.fillText(game.totalEaten.toString(), W/2, cy + 33*s);
+    cy += cardH + cardGap + 6*s;
 
-    // Evolution progress chain
-    const chainW = min(300*s, W*0.85);
+    // Evolution progress chain — ALL 8 species
+    const chainW = min(320*s, W*0.92);
     const chainX = W/2 - chainW/2;
-    drawGlassPanel(chainX, cy, chainW, 75*s, 8*s);
-    ctx.font = `700 ${8*s}px ${THEME.fontLabel}`;
+    drawGlassPanel(chainX, cy, chainW, 70*s, 8*s);
+    ctx.font = `700 ${7*s}px ${THEME.fontLabel}`;
     ctx.fillStyle = colorWithAlpha(THEME.onSurfaceVar, 0.5);
-    ctx.fillText('EVOLUTIONARY PROGRESS', W/2, cy + 12*s);
+    ctx.fillText('EVOLUTIONARY PROGRESS', W/2, cy + 11*s);
 
-    const specCount = min(game.player.maxLevel + 1, 8);
-    const dotSpacing = chainW / 6;
-    const dotY = cy + 48*s;
-    for (let i = 0; i < min(5, 8); i++) {
+    const totalSpecies = 8;
+    const dotSpacing = (chainW - 24*s) / (totalSpecies - 1);
+    const dotY = cy + 42*s;
+    for (let i = 0; i < totalSpecies; i++) {
         const sp = getSpecies(i + 1);
-        const dx = chainX + 30*s + i*dotSpacing;
+        const dx = chainX + 12*s + i*dotSpacing;
         const conquered = (i+1) <= game.player.maxLevel;
         const isCurrent = (i+1) === game.player.maxLevel;
 
-        const dotR = isCurrent ? 14*s : 10*s;
+        const dotR = isCurrent ? 12*s : 8*s;
         ctx.beginPath(); ctx.arc(dx, dotY, dotR, 0, TWO_PI);
         if (conquered) {
             ctx.fillStyle = colorWithAlpha(sp.colors.base, isCurrent ? 0.3 : 0.15);
@@ -2962,7 +2926,7 @@ function renderGameOver(W, H, dpr) {
             ctx.lineWidth = isCurrent ? 2*s : 1*s;
             ctx.stroke();
             if (isCurrent) {
-                ctx.shadowBlur = 10*s; ctx.shadowColor = colorWithAlpha(sp.colors.base, 0.4);
+                ctx.shadowBlur = 8*s; ctx.shadowColor = colorWithAlpha(sp.colors.base, 0.4);
                 ctx.stroke(); ctx.shadowBlur = 0;
             }
         } else {
@@ -2972,19 +2936,19 @@ function renderGameOver(W, H, dpr) {
             ctx.lineWidth = 1;
             ctx.stroke();
         }
-        ctx.font = `700 ${7*s}px ${THEME.fontLabel}`;
+        ctx.font = `700 ${6*s}px ${THEME.fontLabel}`;
         ctx.fillStyle = conquered ? colorWithAlpha(sp.colors.base, 0.8) : colorWithAlpha(THEME.outline, 0.3);
-        ctx.fillText(sp.name.toUpperCase().slice(0,4), dx, dotY + dotR + 10*s);
+        ctx.fillText(sp.name.toUpperCase().slice(0,4), dx, dotY + dotR + 9*s);
 
         // connector line
-        if (i < 4) {
+        if (i < totalSpecies - 1) {
             ctx.strokeStyle = conquered && (i+2)<=game.player.maxLevel ?
                 colorWithAlpha(THEME.primary, 0.25) : colorWithAlpha(THEME.outline, 0.1);
             ctx.lineWidth = 1;
             ctx.beginPath(); ctx.moveTo(dx+dotR+2*s, dotY); ctx.lineTo(dx+dotSpacing-dotR-2*s, dotY); ctx.stroke();
         }
     }
-    cy += 85*s;
+    cy += 78*s;
 
     // Play again button
     ctx.font = `700 ${14*s}px ${THEME.fontHeadline}`;
@@ -3344,9 +3308,9 @@ requestAnimationFrame(gameLoop);
 // SECTION: MOBILE CONTROLS INIT
 // ============================================================
 if (IS_MOBILE) {
-    // Tilt mode: hide joystick, keep pause button
+    // Tilt mode: hide joystick, keep pause button (initially hidden, shown during gameplay by updateDashBtn loop)
     const pauseBtn = document.getElementById('mobile-pause');
-    pauseBtn.style.display = 'block';
+    pauseBtn.style.display = 'none';
     pauseBtn.addEventListener('touchstart', (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -3413,6 +3377,8 @@ if (IS_MOBILE) {
         }
         // Hide during non-play states
         dashBtn.style.visibility = (game.state === 'PLAYING' || game.state === 'DYING') ? 'visible' : 'hidden';
+        // Pause button: only visible during PLAYING, PAUSED, and DYING
+        pauseBtn.style.display = (game.state === 'PLAYING' || game.state === 'PAUSED' || game.state === 'DYING') ? 'block' : 'none';
     })();
 
     // Hide cursor style on mobile
