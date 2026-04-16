@@ -17,7 +17,7 @@ if (!IS_MOBILE) {
     document.getElementById('dash-btn').style.display = 'none';
     throw new Error('Desktop not supported — please visit on mobile');
 }
-const BUILD_ID = 'tilt-18';
+const BUILD_ID = 'tilt-19';
 
 // Try to lock orientation to portrait (works on Android Chrome & PWAs)
 try { screen.orientation.lock('portrait').catch(() => {}); } catch(e) {}
@@ -2662,7 +2662,7 @@ function renderGameOver(W, H, dpr) {
             ctx.beginPath(); ctx.moveTo(dx+dotR+2*s, dotY); ctx.lineTo(dx+dotSpacing-dotR-2*s, dotY); ctx.stroke();
         }
     }
-    cy += 90*s;
+    cy += 110*s;
 
     // Play again button
     ctx.font = `700 ${14*s}px ${THEME.fontHeadline}`;
