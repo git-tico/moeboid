@@ -6,10 +6,18 @@
 // ============================================================
 
 // ============================================================
-// SECTION 0: PLATFORM DETECTION
+// SECTION 0: PLATFORM GATE
 // ============================================================
 const IS_MOBILE = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-const BUILD_ID = 'tilt-17';
+if (!IS_MOBILE) {
+    document.getElementById('desktop-gate').style.display = 'flex';
+    document.getElementById('gameCanvas').style.display = 'none';
+    document.getElementById('mobile-pause').style.display = 'none';
+    document.getElementById('calibrate-btn').style.display = 'none';
+    document.getElementById('dash-btn').style.display = 'none';
+    throw new Error('Desktop not supported — please visit on mobile');
+}
+const BUILD_ID = 'tilt-18';
 
 // Try to lock orientation to portrait (works on Android Chrome & PWAs)
 try { screen.orientation.lock('portrait').catch(() => {}); } catch(e) {}
@@ -202,7 +210,7 @@ function getSpecies(level) {
 }
 
 // ============================================================
-// SECTION 3: SOUND MANAGER (Web Audio API - Procedural)
+// SECTION 3: AUDIO — SOUND MANAGER (Web Audio API - Procedural)
 // ============================================================
 class SoundManager {
     constructor() {
@@ -341,7 +349,7 @@ class SoundManager {
 const sound = new SoundManager();
 
 // ============================================================
-// SECTION 3b: PROCEDURAL MUSIC
+// SECTION 3b: AUDIO — PROCEDURAL MUSIC
 // ============================================================
 class MusicManager {
     constructor() {
@@ -670,7 +678,7 @@ function drawParticles(ctx) {
 }
 
 // ============================================================
-// SECTION 5: AMOEBA ENTITY
+// SECTION 5: ENTITIES — AMOEBA
 // ============================================================
 class Amoeba {
     constructor(x, y, speciesLevel) {
@@ -837,7 +845,7 @@ class Amoeba {
 }
 
 // ============================================================
-// SECTION 6: PLAYER
+// SECTION 6: ENTITIES — PLAYER
 // ============================================================
 class Player extends Amoeba {
     constructor(x, y) {
@@ -1197,51 +1205,7 @@ function aiFleeFromPredator(amoeba, dt, allAmoebas, player) {
 }
 
 // ============================================================
-// SECTION 8: SPATIAL GRID
-// ============================================================
-class SpatialGrid {
-    constructor(cellSize) {
-        this.cellSize = cellSize;
-        this.cells = new Map();
-    }
-
-    clear() {
-        this.cells.clear();
-    }
-
-    _key(cx, cy) {
-        return cx * 73856093 ^ cy * 19349663;
-    }
-
-    insert(entity) {
-        const cx = floor(entity.x / this.cellSize);
-        const cy = floor(entity.y / this.cellSize);
-        const key = this._key(cx, cy);
-        if (!this.cells.has(key)) this.cells.set(key, []);
-        this.cells.get(key).push(entity);
-    }
-
-    query(entity) {
-        const cx = floor(entity.x / this.cellSize);
-        const cy = floor(entity.y / this.cellSize);
-        const nearby = [];
-        for (let dx = -1; dx <= 1; dx++) {
-            for (let dy = -1; dy <= 1; dy++) {
-                const key = this._key(cx + dx, cy + dy);
-                const cell = this.cells.get(key);
-                if (cell) {
-                    for (const e of cell) {
-                        if (e !== entity) nearby.push(e);
-                    }
-                }
-            }
-        }
-        return nearby;
-    }
-}
-
-// ============================================================
-// SECTION 9: POPULATION MANAGER
+// SECTION 8: POPULATION MANAGER
 // ============================================================
 function getPopulationTarget(speciesLevel, playerLevel) {
     // Only species up to playerLevel+1 are active
@@ -1325,153 +1289,28 @@ class PopulationManager {
 }
 
 // ============================================================
-// SECTION 10: INPUT HANDLER
+// SECTION 9: INPUT HANDLER
 // ============================================================
 class InputHandler {
     constructor() {
-        this.keys = {};
-        // Touch input (set by TouchController)
+        // Touch/tilt input (set by TiltController)
         this.touchMoveX = 0;
         this.touchMoveY = 0;
         this.touchActive = false;
         this._tapFlag = false;
-
-        window.addEventListener('keydown', (e) => {
-            this.keys[e.code] = true;
-            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
-                e.preventDefault();
-            }
-        });
-        window.addEventListener('keyup', (e) => {
-            this.keys[e.code] = false;
-        });
     }
-
-    isPressed(code) { return this.keys[code] === true; }
 
     consumeTap() {
         if (this._tapFlag) { this._tapFlag = false; return true; }
         return false;
     }
 
-    get moveX() {
-        if (this.touchActive) return this.touchMoveX;
-        return (this.isPressed('ArrowRight') ? 1 : 0) - (this.isPressed('ArrowLeft') ? 1 : 0);
-    }
-
-    get moveY() {
-        if (this.touchActive) return this.touchMoveY;
-        return (this.isPressed('ArrowDown') ? 1 : 0) - (this.isPressed('ArrowUp') ? 1 : 0);
-    }
+    get moveX() { return this.touchMoveX; }
+    get moveY() { return this.touchMoveY; }
 }
 
 // ============================================================
-// SECTION 10b: TOUCH CONTROLLER (mobile joystick)
-// ============================================================
-class TouchController {
-    constructor(inputHandler) {
-        this.input = inputHandler;
-        this.zone = document.getElementById('joystick-zone');
-        this.base = document.getElementById('joystick-base');
-        this.nub = document.getElementById('joystick-nub');
-        this.activeId = null;    // touch identifier being tracked
-        this.originX = 0;
-        this.originY = 0;
-        this.startTime = 0;
-        this.startX = 0;
-        this.startY = 0;
-        this.maxRadius = 55;     // max nub displacement from center
-        this.deadZone = 10;      // pixels
-
-        this.zone.addEventListener('touchstart', e => this.onStart(e), { passive: false });
-        this.zone.addEventListener('touchmove', e => this.onMove(e), { passive: false });
-        this.zone.addEventListener('touchend', e => this.onEnd(e), { passive: false });
-        this.zone.addEventListener('touchcancel', e => this.onEnd(e), { passive: false });
-    }
-
-    onStart(e) {
-        e.preventDefault();
-        if (this.activeId !== null) return; // already tracking a touch
-
-        const t = e.changedTouches[0];
-        this.activeId = t.identifier;
-        this.originX = t.clientX;
-        this.originY = t.clientY;
-        this.startX = t.clientX;
-        this.startY = t.clientY;
-        this.startTime = performance.now();
-
-        // Show joystick at touch point
-        this.base.style.left = t.clientX + 'px';
-        this.base.style.top = t.clientY + 'px';
-        this.base.style.display = 'block';
-        this.nub.style.left = t.clientX + 'px';
-        this.nub.style.top = t.clientY + 'px';
-        this.nub.style.display = 'block';
-
-        this.input.touchActive = true;
-    }
-
-    onMove(e) {
-        e.preventDefault();
-        for (const t of e.changedTouches) {
-            if (t.identifier !== this.activeId) continue;
-
-            const dx = t.clientX - this.originX;
-            const dy = t.clientY - this.originY;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-
-            // Clamp nub position
-            let clampedX, clampedY;
-            if (dist > this.maxRadius) {
-                clampedX = this.originX + (dx / dist) * this.maxRadius;
-                clampedY = this.originY + (dy / dist) * this.maxRadius;
-            } else {
-                clampedX = t.clientX;
-                clampedY = t.clientY;
-            }
-            this.nub.style.left = clampedX + 'px';
-            this.nub.style.top = clampedY + 'px';
-
-            // Calculate analog input with dead zone
-            if (dist < this.deadZone) {
-                this.input.touchMoveX = 0;
-                this.input.touchMoveY = 0;
-            } else {
-                const mag = Math.min((dist - this.deadZone) / (this.maxRadius - this.deadZone), 1);
-                this.input.touchMoveX = (dx / dist) * mag;
-                this.input.touchMoveY = (dy / dist) * mag;
-            }
-        }
-    }
-
-    onEnd(e) {
-        e.preventDefault();
-        for (const t of e.changedTouches) {
-            if (t.identifier !== this.activeId) continue;
-
-            // Detect tap: short duration + small movement
-            const elapsed = performance.now() - this.startTime;
-            const movedX = t.clientX - this.startX;
-            const movedY = t.clientY - this.startY;
-            const moved = Math.sqrt(movedX * movedX + movedY * movedY);
-            if (elapsed < 250 && moved < 20) {
-                this.input._tapFlag = true;
-            }
-
-            // Reset
-            this.activeId = null;
-            this.input.touchMoveX = 0;
-            this.input.touchMoveY = 0;
-            this.input.touchActive = false;
-            this.base.style.display = 'none';
-            this.nub.style.display = 'none';
-        }
-    }
-}
-
-// ============================================================
-// SECTION 10c: TILT CONTROLLER (DeviceOrientation)
+// SECTION 9b: TILT CONTROLLER (DeviceOrientation)
 // ============================================================
 class TiltController {
     constructor(inputHandler) {
@@ -1555,7 +1394,7 @@ class TiltController {
 }
 
 // ============================================================
-// SECTION 11: SCREEN SHAKE
+// SECTION 10: SCREEN SHAKE
 // ============================================================
 const screenShake = { x: 0, y: 0, intensity: 0, duration: 0, maxDuration: 0 };
 
@@ -1578,7 +1417,7 @@ function updateShake(dt) {
 }
 
 // ============================================================
-// SECTION 12: GAME STATE & MAIN LOGIC
+// SECTION 11: GAME STATE & MAIN LOGIC
 // ============================================================
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
@@ -1631,8 +1470,8 @@ function startGame() {
         music.start();
     }
 
-    // On mobile with tilt: go to calibration first
-    if (IS_MOBILE && window._tiltCtrl && !window._tiltCtrl.calibrated) {
+    // Go to calibration first if tilt not yet calibrated
+    if (window._tiltCtrl && !window._tiltCtrl.calibrated) {
         game.state = 'TILT_CALIBRATING';
         game._calibTaps = 0;
         game._calibDbg = 'none';
@@ -1692,17 +1531,9 @@ function respawnPlayer() {
 }
 
 // Collision handling
-const grid = new SpatialGrid(100);
-
 function handleCollisions() {
     const player = game.player;
     const amoebas = game.amoebas;
-
-    // Build grid
-    grid.clear();
-    for (const a of amoebas) {
-        if (a.alive && !a.spawning) grid.insert(a);
-    }
 
     // Player vs enemies
     if (player.alive) {
@@ -1797,7 +1628,7 @@ function softBounce(a, b) {
 }
 
 // ============================================================
-// SECTION 13: UPDATE
+// SECTION 12: UPDATE
 // ============================================================
 function update(dt) {
     switch (game.state) {
@@ -1813,7 +1644,7 @@ function update(dt) {
                 a.y += a.vy * dt;
                 a.constrainToDish(240);
             }
-            if (input.isPressed('Enter') || input.isPressed('Space') || input.consumeTap()) {
+            if (input.consumeTap()) {
                 // Init audio on first user gesture
                 sound.init();
                 sound.resume();
@@ -1824,8 +1655,6 @@ function update(dt) {
                 if (!localStorage.getItem('moeboid_onboarded')) {
                     game.state = 'ONBOARDING';
                     game.onboardingCard = 0;
-                    input.keys['Enter'] = false;
-                    input.keys['Space'] = false;
                 } else {
                     startGame();
                 }
@@ -1833,14 +1662,7 @@ function update(dt) {
             break;
 
         case 'ONBOARDING':
-            // Debounce: wait for key release before accepting next press
-            if (!input.isPressed('Enter') && !input.isPressed('Space')) {
-                game._onboardReady = true;
-            }
-            if (game._onboardReady && (input.isPressed('Enter') || input.isPressed('Space') || input.consumeTap())) {
-                input.keys['Enter'] = false;
-                input.keys['Space'] = false;
-                game._onboardReady = false;
+            if (input.consumeTap()) {
                 game.onboardingCard++;
                 if (game.onboardingCard >= 3) {
                     localStorage.setItem('moeboid_onboarded', '1');
@@ -1891,18 +1713,6 @@ function update(dt) {
             updateParticles(dt);
             updateShake(dt);
 
-            // Pause
-            if (input.isPressed('KeyP') || input.isPressed('Escape')) {
-                game.state = 'PAUSED';
-                input.keys['KeyP'] = false;
-                input.keys['Escape'] = false;
-            }
-
-            // Mute
-            if (input.isPressed('KeyM')) {
-                sound.toggleMute();
-                input.keys['KeyM'] = false;
-            }
             break;
 
         case 'DYING':
@@ -1931,31 +1741,18 @@ function update(dt) {
                     a.y += a.vy * dt;
                 }
             }
-            if (input.isPressed('Enter') || input.isPressed('Space') || input.consumeTap()) {
-                input.keys['Enter'] = false;
-                input.keys['Space'] = false;
+            if (input.consumeTap()) {
                 startGame();
             }
-            if (input.isPressed('KeyM') && !input._menuHeld) {
-                input._menuHeld = true;
-                game.state = 'MENU';
-                initMenuAmoebas();
-            }
-            if (!input.isPressed('KeyM')) input._menuHeld = false;
             break;
 
         case 'PAUSED':
-            if (input.isPressed('KeyP') || input.isPressed('Escape') || input.consumeTap()) {
-                game.state = 'PLAYING';
-                input.keys['KeyP'] = false;
-                input.keys['Escape'] = false;
-            }
             break;
     }
 }
 
 // ============================================================
-// SECTION 14: RENDERER
+// SECTION 13: RENDERER
 // ============================================================
 function render(time) {
     const W = canvas.width;
@@ -2317,67 +2114,6 @@ function roundRect(ctx, x, y, w, h, r) {
     ctx.closePath();
 }
 
-function renderMinimap(W, H, dpr, time) {
-    const s = dpr;
-    const mapRadius = 50*s;
-    const cx = W - mapRadius - 18*s;
-    const cy = H - mapRadius - 55*s;
-    const mapScale = mapRadius / game.dishRadius;
-
-    ctx.save();
-    // Glass background
-    ctx.beginPath(); ctx.arc(cx, cy, mapRadius+3*s, 0, TWO_PI);
-    ctx.fillStyle = 'rgba(13,27,40,0.5)';
-    ctx.fill();
-
-    ctx.beginPath(); ctx.arc(cx, cy, mapRadius, 0, TWO_PI);
-    ctx.fillStyle = THEME.surfaceCtr;
-    ctx.fill();
-    ctx.strokeStyle = colorWithAlpha(THEME.secondary, 0.2);
-    ctx.lineWidth = 1;
-    ctx.stroke();
-
-    // sweep line
-    ctx.save();
-    ctx.beginPath(); ctx.arc(cx, cy, mapRadius, 0, TWO_PI); ctx.clip();
-    const sweepAngle = time * 0.8;
-    const sweepGrad = ctx.createConicGradient(sweepAngle, cx, cy);
-    sweepGrad.addColorStop(0, 'rgba(105,254,165,0.08)');
-    sweepGrad.addColorStop(0.15, 'rgba(105,254,165,0)');
-    sweepGrad.addColorStop(1, 'rgba(105,254,165,0)');
-    ctx.fillStyle = sweepGrad;
-    ctx.fillRect(cx-mapRadius, cy-mapRadius, mapRadius*2, mapRadius*2);
-    ctx.restore();
-
-    ctx.globalAlpha = 0.6;
-    for (const a of game.amoebas) {
-        if (!a.alive) continue;
-        const mx = cx + a.x*mapScale;
-        const my = cy + a.y*mapScale;
-        const mr = max(1.5, a.radius*mapScale);
-        ctx.fillStyle = a.speciesLevel <= game.player.level ? THEME.primary :
-                        a.speciesLevel === game.player.level+1 ? THEME.error : THEME.outline;
-        ctx.beginPath(); ctx.arc(mx, my, mr, 0, TWO_PI); ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-
-    // Player dot
-    if (game.player && game.state !== 'DYING') {
-        ctx.shadowBlur = 6*s; ctx.shadowColor = THEME.primary;
-        ctx.fillStyle = '#fff';
-        ctx.beginPath(); ctx.arc(cx + game.player.x*mapScale, cy + game.player.y*mapScale, 3*s, 0, TWO_PI);
-        ctx.fill(); ctx.shadowBlur = 0;
-    }
-
-    // Label
-    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-    ctx.font = `700 ${7*s}px ${THEME.fontLabel}`;
-    ctx.fillStyle = THEME.secondary;
-    ctx.fillText('SCANNING PROXIMITY', cx, cy + mapRadius + 6*s);
-
-    ctx.restore();
-}
-
 function renderLevelUpFlash(W, H, dpr) {
     const s = dpr;
     const alpha = clamp(game.levelUpFlashTimer / 2.0, 0, 1);
@@ -2518,7 +2254,7 @@ function renderMenu(W, H, dpr, time) {
     ctx.font = `700 ${15*s}px ${THEME.fontHeadline}`;
     const pulse = 0.85 + 0.15*sin(time*3);
     ctx.globalAlpha = pulse;
-    drawButton(W/2, btnY, IS_MOBILE ? 'TAP TO START' : 'PRESS ENTER TO START', s, 220*s);
+    drawButton(W/2, btnY, 'TAP TO START', s, 220*s);
     ctx.globalAlpha = 1;
 
     // Credit
@@ -2633,54 +2369,47 @@ function renderOnboarding(W, H, dpr, time) {
     }
 
     if (card === 0) {
-        // ── Card 1: Controls ──
+        // ── Card 1: Controls (Tilt) ──
         ctx.font = `700 ${26*s}px ${THEME.fontHeadline}`;
         ctx.fillStyle = THEME.primary;
-        ctx.fillText('Touch anywhere', W/2, H*0.2);
-        ctx.fillText('and drag to move', W/2, H*0.2 + 34*s);
+        ctx.fillText('Tilt your device', W/2, H*0.2);
+        ctx.fillText('to move', W/2, H*0.2 + 34*s);
 
-        // Joystick animation
-        const joyY = H*0.45;
-        const baseR = 50*s;
-        const nubR = 18*s;
-        const angle = time * 1.2;
-        const reach = 28*s;
-        const nubX = W/2 + cos(angle)*reach;
-        const nubY = joyY + sin(angle)*reach;
-
-        // Base circle
-        ctx.beginPath(); ctx.arc(W/2, joyY, baseR, 0, TWO_PI);
-        ctx.fillStyle = colorWithAlpha(THEME.primary, 0.06);
-        ctx.fill();
-        ctx.strokeStyle = colorWithAlpha(THEME.primary, 0.2);
-        ctx.lineWidth = 2*s;
-        ctx.stroke();
-
-        // Trail arc
+        // Tilt illustration (phone with wobble + crosshair arrows)
+        const iconY = H*0.45;
+        const wobble = Math.sin(time * 1.2) * 0.15;
+        ctx.save();
+        ctx.translate(W/2, iconY);
+        ctx.rotate(wobble);
+        ctx.strokeStyle = THEME.primary;
+        ctx.lineWidth = 2 * s;
         ctx.beginPath();
-        ctx.arc(W/2, joyY, reach, angle - 1.5, angle);
-        ctx.strokeStyle = colorWithAlpha(THEME.primary, 0.15);
-        ctx.lineWidth = 3*s;
+        ctx.roundRect(-20 * s, -30 * s, 40 * s, 60 * s, 6 * s);
         ctx.stroke();
-
-        // Nub
-        ctx.beginPath(); ctx.arc(nubX, nubY, nubR, 0, TWO_PI);
-        ctx.fillStyle = colorWithAlpha(THEME.primary, 0.3);
+        // Screen dot
+        ctx.fillStyle = THEME.primary;
+        ctx.beginPath();
+        ctx.arc(0, 5 * s, 3 * s, 0, TWO_PI);
         ctx.fill();
-        ctx.strokeStyle = colorWithAlpha(THEME.primary, 0.5);
-        ctx.lineWidth = 1.5*s;
-        ctx.stroke();
+        ctx.restore();
 
-        // Finger icon (touch_app substitute)
-        ctx.font = `700 ${28*s}px ${THEME.fontHeadline}`;
-        ctx.fillStyle = colorWithAlpha(THEME.primary, 0.7);
-        ctx.fillText('👆', nubX, nubY - 2*s);
+        // Tilt arrows (crosshair around phone)
+        ctx.strokeStyle = THEME.secondary;
+        ctx.lineWidth = 1.5 * s;
+        const arrowR = 45 * s;
+        for (let i = 0; i < 4; i++) {
+            const a = i * Math.PI / 2;
+            ctx.beginPath();
+            ctx.moveTo(W/2 + Math.cos(a) * 30 * s, iconY + Math.sin(a) * 30 * s);
+            ctx.lineTo(W/2 + Math.cos(a) * arrowR, iconY + Math.sin(a) * arrowR);
+            ctx.stroke();
+        }
 
         // Description
         ctx.font = `400 ${12*s}px ${THEME.fontBody}`;
         ctx.fillStyle = colorWithAlpha(THEME.onSurfaceVar, 0.7);
         ctx.fillText('Precise fluid movement is key to survival.', W/2, H*0.65);
-        ctx.fillText('Your organism follows your touch with inertia.', W/2, H*0.65 + 20*s);
+        ctx.fillText("Your organism follows your device's tilt.", W/2, H*0.65 + 20*s);
 
     } else if (card === 1) {
         // ── Card 2: Rules ──
@@ -2803,7 +2532,7 @@ function renderOnboarding(W, H, dpr, time) {
     // Tap hint
     ctx.font = `400 ${11*s}px ${THEME.fontBody}`;
     ctx.fillStyle = colorWithAlpha(THEME.onSurfaceVar, 0.35);
-    ctx.fillText(card < 2 ? (IS_MOBILE ? 'Tap to continue' : 'Press ENTER to continue') : '', W/2, H - 80*s);
+    ctx.fillText(card < 2 ? 'Tap to continue' : '', W/2, H - 80*s);
 
     ctx.restore();
 }
@@ -2937,14 +2666,7 @@ function renderGameOver(W, H, dpr) {
 
     // Play again button
     ctx.font = `700 ${14*s}px ${THEME.fontHeadline}`;
-    drawButton(W/2, cy, IS_MOBILE ? 'TAP TO PLAY AGAIN' : 'PLAY AGAIN', s, 220*s);
-
-    // Menu link
-    if (!IS_MOBILE) {
-        ctx.font = `500 ${10*s}px ${THEME.fontLabel}`;
-        ctx.fillStyle = colorWithAlpha(THEME.onSurfaceVar, 0.5);
-        ctx.fillText('Press N for menu', W/2, cy + 34*s);
-    }
+    drawButton(W/2, cy, 'TAP TO PLAY AGAIN', s, 220*s);
 
     ctx.restore();
 }
@@ -3021,7 +2743,7 @@ function renderPaused(W, H, dpr) {
 
     // Resume button
     ctx.font = `700 ${14*s}px ${THEME.fontHeadline}`;
-    drawButton(W/2, cy + 16*s, IS_MOBILE ? 'TAP TO RESUME' : 'RESUME', s, 220*s);
+    drawButton(W/2, cy + 16*s, 'TAP TO RESUME', s, 220*s);
 
     // Metadata
     ctx.font = `500 ${8*s}px ${THEME.fontLabel}`;
@@ -3032,7 +2754,7 @@ function renderPaused(W, H, dpr) {
 }
 
 // ============================================================
-// SECTION 15: GAME LOOP
+// SECTION 14: GAME LOOP
 // ============================================================
 const FIXED_DT = 1 / 60;
 let lastTimestamp = 0;
@@ -3094,11 +2816,9 @@ function gameLoop(timestamp) {
 requestAnimationFrame(gameLoop);
 
 // ============================================================
-// SECTION: LIVE TUNING PANEL (temporary debug tool)
+// SECTION 15: TUNING PANEL (debug, hidden)
 // ============================================================
 (() => {
-    if (IS_MOBILE) return; // No tuning panel on mobile
-
     const DEFAULTS = {
         config: JSON.parse(JSON.stringify(CONFIG)),
         tuning: JSON.parse(JSON.stringify(TUNING)),
@@ -3116,15 +2836,7 @@ requestAnimationFrame(gameLoop);
     `;
     document.body.appendChild(panel);
 
-    let visible = false;
-    window.addEventListener('keydown', e => {
-        if (e.key === 't' || e.key === 'T') {
-            if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
-            visible = !visible;
-            panel.style.display = visible ? 'block' : 'none';
-            e.preventDefault();
-        }
-    });
+    window.toggleTuning = () => { panel.style.display = panel.style.display === 'none' ? 'block' : 'none'; };
 
     function makeSlider(label, value, min, max, step, onChange) {
         const row = document.createElement('div');
@@ -3290,82 +3002,77 @@ requestAnimationFrame(gameLoop);
 })();
 
 // ============================================================
-// SECTION: MOBILE CONTROLS INIT
+// SECTION 16: MOBILE CONTROLS INIT
 // ============================================================
-if (IS_MOBILE) {
-    // Tilt mode: hide joystick, keep pause button (initially hidden, shown during gameplay by updateDashBtn loop)
-    const pauseBtn = document.getElementById('mobile-pause');
-    pauseBtn.style.display = 'none';
-    pauseBtn.addEventListener('touchstart', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (game.state === 'PLAYING') {
-            game.state = 'PAUSED';
-        } else if (game.state === 'PAUSED') {
+// Tilt mode: keep pause button (initially hidden, shown during gameplay by updateDashBtn loop)
+const pauseBtn = document.getElementById('mobile-pause');
+pauseBtn.style.display = 'none';
+pauseBtn.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (game.state === 'PLAYING') {
+        game.state = 'PAUSED';
+    } else if (game.state === 'PAUSED') {
+        game.state = 'PLAYING';
+    }
+}, { passive: false });
+
+// Initialize tilt controller
+const tiltCtrl = new TiltController(input);
+window._tiltCtrl = tiltCtrl; // expose for calibration screen
+
+// Tap on canvas: menu interactions
+document.querySelector('canvas').addEventListener('touchstart', (e) => {
+    if (e.target !== document.querySelector('canvas')) return;
+    input._tapFlag = true;
+}, { passive: true });
+
+// Calibrate button: HTML button with click event (iOS requires click for permissions)
+const calibBtn = document.getElementById('calibrate-btn');
+calibBtn.addEventListener('click', () => {
+    game._calibDbg = 'click!';
+    const doCalibrate = () => {
+        game._calibDbg = 'calibrating...';
+        calibBtn.style.display = 'none';
+        setTimeout(() => {
+            tiltCtrl.calibrate();
             game.state = 'PLAYING';
-        }
-    }, { passive: false });
+            game._calibDbg = 'done!';
+        }, 300);
+    };
+    if (tiltCtrl._needsPermission) {
+        game._calibDbg = 'requesting perm (click)...';
+        tiltCtrl.requestiOSPermission(doCalibrate);
+    } else {
+        if (!tiltCtrl.listening) tiltCtrl._listen();
+        doCalibrate();
+    }
+});
 
-    // Initialize tilt controller (replaces touch controller)
-    const tiltCtrl = new TiltController(input);
-    window._tiltCtrl = tiltCtrl; // expose for calibration screen
+// Dash button
+const dashBtn = document.getElementById('dash-btn');
+dashBtn.style.display = 'block';
+dashBtn.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (game.state !== 'PLAYING' || !game.player) return;
+    const dashed = game.player.triggerDash(input.touchMoveX, input.touchMoveY);
+    if (dashed) {
+        dashBtn.classList.add('cooldown');
+        sound.playEat(1); // reuse eat sound as dash feedback
+    }
+}, { passive: false });
 
-    // Tap on canvas: menu interactions
-    document.querySelector('canvas').addEventListener('touchstart', (e) => {
-        if (e.target !== document.querySelector('canvas')) return;
-        input._tapFlag = true;
-    }, { passive: true });
-
-    // Calibrate button: HTML button with click event (iOS requires click for permissions)
-    const calibBtn = document.getElementById('calibrate-btn');
-    calibBtn.addEventListener('click', () => {
-        game._calibDbg = 'click!';
-        const doCalibrate = () => {
-            game._calibDbg = 'calibrating...';
-            calibBtn.style.display = 'none';
-            setTimeout(() => {
-                tiltCtrl.calibrate();
-                game.state = 'PLAYING';
-                game._calibDbg = 'done!';
-            }, 300);
-        };
-        if (tiltCtrl._needsPermission) {
-            game._calibDbg = 'requesting perm (click)...';
-            tiltCtrl.requestiOSPermission(doCalibrate);
-        } else {
-            if (!tiltCtrl.listening) tiltCtrl._listen();
-            doCalibrate();
-        }
-    });
-
-    // Dash button
-    const dashBtn = document.getElementById('dash-btn');
-    dashBtn.style.display = 'block';
-    dashBtn.addEventListener('touchstart', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (game.state !== 'PLAYING' || !game.player) return;
-        const dashed = game.player.triggerDash(input.touchMoveX, input.touchMoveY);
-        if (dashed) {
-            dashBtn.classList.add('cooldown');
-            sound.playEat(1); // reuse eat sound as dash feedback
-        }
-    }, { passive: false });
-
-    // Update dash button cooldown visual every frame
-    const origRAF = window.requestAnimationFrame;
-    (function updateDashBtn() {
-        origRAF(updateDashBtn);
-        if (!game.player) return;
-        if (game.player.dashCooldown <= 0 && !game.player.isDashing) {
-            dashBtn.classList.remove('cooldown');
-        }
-        // Hide during non-play states
-        dashBtn.style.visibility = (game.state === 'PLAYING' || game.state === 'DYING') ? 'visible' : 'hidden';
-        // Pause button: only visible during PLAYING, PAUSED, and DYING
-        pauseBtn.style.display = (game.state === 'PLAYING' || game.state === 'PAUSED' || game.state === 'DYING') ? 'block' : 'none';
-    })();
-
-    // Hide cursor style on mobile
-    document.querySelector('canvas').style.cursor = 'default';
-}
+// Update dash button cooldown visual every frame
+const origRAF = window.requestAnimationFrame;
+(function updateDashBtn() {
+    origRAF(updateDashBtn);
+    if (!game.player) return;
+    if (game.player.dashCooldown <= 0 && !game.player.isDashing) {
+        dashBtn.classList.remove('cooldown');
+    }
+    // Hide during non-play states
+    dashBtn.style.visibility = (game.state === 'PLAYING' || game.state === 'DYING') ? 'visible' : 'hidden';
+    // Pause button: only visible during PLAYING, PAUSED, and DYING
+    pauseBtn.style.display = (game.state === 'PLAYING' || game.state === 'PAUSED' || game.state === 'DYING') ? 'block' : 'none';
+})();
