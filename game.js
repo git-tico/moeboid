@@ -17,7 +17,7 @@ if (!IS_MOBILE) {
     document.getElementById('dash-btn').style.display = 'none';
     throw new Error('Desktop not supported — please visit on mobile');
 }
-const BUILD_ID = 'tilt-20';
+const BUILD_ID = 'tilt-21';
 
 // Try to lock orientation to portrait (works on Android Chrome & PWAs)
 try { screen.orientation.lock('portrait').catch(() => {}); } catch(e) {}
@@ -120,7 +120,7 @@ const THEME = {
 };
 
 // Player radius at each level (index = level, 1-7)
-const PLAYER_RADII = [0, 18, 21, 25, 30, 36, 43, 52];
+const PLAYER_RADII = [0, 12, 15, 19, 26, 35, 46, 62];
 
 // XP needed to reach each level (index = target level)
 // XP curve: steep exponential to compensate for higher XP rewards at higher levels
