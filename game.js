@@ -17,7 +17,7 @@ if (!IS_MOBILE) {
     document.getElementById('dash-btn').style.display = 'none';
     throw new Error('Desktop not supported — please visit on mobile');
 }
-const BUILD_ID = 'tilt-22';
+const BUILD_ID = 'tilt-23';
 
 // Try to lock orientation to portrait (works on Android Chrome & PWAs)
 try { screen.orientation.lock('portrait').catch(() => {}); } catch(e) {}
@@ -993,9 +993,13 @@ class Player extends Amoeba {
     }
 
     draw(ctx, time) {
-        // Invincibility flash
-        if (this.invincible && Math.floor(time * 8) % 2 === 0) {
-            ctx.globalAlpha = 0.4;
+        // Invincibility flicker: smooth oscillation that speeds up near the end
+        // to telegraph that invulnerability is ending (classic arcade juice).
+        if (this.invincible) {
+            const remaining = this.invincibleTimer / CONFIG.INVINCIBILITY_TIME; // 1 → 0
+            const freq = 5 + (1 - remaining) * 7; // 5Hz early → 12Hz as it expires
+            const wave = 0.5 + 0.5 * Math.sin(time * freq * Math.PI * 2);
+            ctx.globalAlpha = 0.25 + 0.75 * wave; // alpha oscillates 0.25 ↔ 1.0
         }
 
         // Eat pulse: scale up then back down
