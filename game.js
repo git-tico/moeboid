@@ -17,7 +17,7 @@ if (!IS_MOBILE) {
     document.getElementById('dash-btn').style.display = 'none';
     throw new Error('Desktop not supported — please visit on mobile');
 }
-const BUILD_ID = 'tilt-21';
+const BUILD_ID = 'tilt-22';
 
 // Try to lock orientation to portrait (works on Android Chrome & PWAs)
 try { screen.orientation.lock('portrait').catch(() => {}); } catch(e) {}
@@ -30,7 +30,7 @@ const CONFIG = {
     // Tilt maps directly to target velocity; current velocity lerps toward it with exponential smoothing.
     // Higher responsiveness = snappier turns. Rate of 7 ≈ half-life 0.10s, full turn in ~0.3s.
     PLAYER_RESPONSIVENESS: 7,
-    PLAYER_MAX_SPEED: 500,
+    PLAYER_MAX_SPEED: 400,
     PLAYER_SPEED_SIZE_EXPONENT: -0.15,
     PLAYER_DASH_FRICTION: 0.96, // gentle decay during dash
 
