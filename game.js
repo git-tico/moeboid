@@ -17,7 +17,7 @@ if (!IS_MOBILE) {
     document.getElementById('dash-btn').style.display = 'none';
     throw new Error('Desktop not supported — please visit on mobile');
 }
-const BUILD_ID = 'tilt-23';
+const BUILD_ID = 'tilt-24';
 
 // Try to lock orientation to portrait (works on Android Chrome & PWAs)
 try { screen.orientation.lock('portrait').catch(() => {}); } catch(e) {}
@@ -993,15 +993,6 @@ class Player extends Amoeba {
     }
 
     draw(ctx, time) {
-        // Invincibility flicker: smooth oscillation that speeds up near the end
-        // to telegraph that invulnerability is ending (classic arcade juice).
-        if (this.invincible) {
-            const remaining = this.invincibleTimer / CONFIG.INVINCIBILITY_TIME; // 1 → 0
-            const freq = 5 + (1 - remaining) * 7; // 5Hz early → 12Hz as it expires
-            const wave = 0.5 + 0.5 * Math.sin(time * freq * Math.PI * 2);
-            ctx.globalAlpha = 0.25 + 0.75 * wave; // alpha oscillates 0.25 ↔ 1.0
-        }
-
         // Eat pulse: scale up then back down
         let pulseScale = 1;
         if (this.eatPulseTimer > 0) {
@@ -1011,6 +1002,16 @@ class Player extends Amoeba {
 
         // Player glow
         ctx.save();
+
+        // Invincibility flicker: smooth oscillation that speeds up near the end
+        // to telegraph that invulnerability is ending (classic arcade juice).
+        if (this.invincible) {
+            const remaining = this.invincibleTimer / CONFIG.INVINCIBILITY_TIME; // 1 → 0
+            const freq = 5 + (1 - remaining) * 7; // 5Hz early → 12Hz as it expires
+            const wave = 0.5 + 0.5 * Math.sin(time * freq * Math.PI * 2);
+            ctx.globalAlpha = 0.2 + 0.8 * wave; // alpha oscillates 0.2 ↔ 1.0
+        }
+
         if (pulseScale !== 1) {
             ctx.translate(this.x, this.y);
             ctx.scale(pulseScale, pulseScale);
@@ -1020,8 +1021,6 @@ class Player extends Amoeba {
         ctx.shadowColor = this.colors.base;
         super.draw(ctx, time, 0);
         ctx.restore();
-
-        ctx.globalAlpha = 1;
     }
 
     makeInvincible() {
@@ -1496,6 +1495,7 @@ function startGame() {
     game.levelUpFlashTimer = 0;
 
     game.player = new Player(0, 0);
+    game.player.makeInvincible(); // grace period at game start — lets player orient and see the flicker cue
     game.dishRadius = getDishRadius(1);
     game.amoebas = [];
     game.populationManager = new PopulationManager();
