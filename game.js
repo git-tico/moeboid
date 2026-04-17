@@ -17,7 +17,7 @@ if (!IS_MOBILE) {
     document.getElementById('dash-btn').style.display = 'none';
     throw new Error('Desktop not supported — please visit on mobile');
 }
-const BUILD_ID = 'tilt-19';
+const BUILD_ID = 'tilt-20';
 
 // Try to lock orientation to portrait (works on Android Chrome & PWAs)
 try { screen.orientation.lock('portrait').catch(() => {}); } catch(e) {}
@@ -26,11 +26,13 @@ try { screen.orientation.lock('portrait').catch(() => {}); } catch(e) {}
 // SECTION 1: CONFIGURATION
 // ============================================================
 const CONFIG = {
-    // Player
-    PLAYER_ACCELERATION: 2400,
-    PLAYER_FRICTION: 0.90,
+    // Player — target-velocity model (Tilt to Live-style)
+    // Tilt maps directly to target velocity; current velocity lerps toward it with exponential smoothing.
+    // Higher responsiveness = snappier turns. Rate of 7 ≈ half-life 0.10s, full turn in ~0.3s.
+    PLAYER_RESPONSIVENESS: 7,
     PLAYER_MAX_SPEED: 500,
     PLAYER_SPEED_SIZE_EXPONENT: -0.15,
+    PLAYER_DASH_FRICTION: 0.96, // gentle decay during dash
 
     // Game
     START_LIVES: 3,
@@ -919,19 +921,6 @@ class Player extends Amoeba {
 
         const moveX = input.moveX;
         const moveY = input.moveY;
-        const isMoving = moveX !== 0 || moveY !== 0;
-
-        if (isMoving) {
-            const mag = sqrt(moveX * moveX + moveY * moveY);
-            const nx = moveX / mag;
-            const ny = moveY / mag;
-            this.vx += nx * CONFIG.PLAYER_ACCELERATION * dt;
-            this.vy += ny * CONFIG.PLAYER_ACCELERATION * dt;
-        }
-
-        // Friction
-        this.vx *= CONFIG.PLAYER_FRICTION;
-        this.vy *= CONFIG.PLAYER_FRICTION;
 
         // Juice timers
         if (this.eatPulseTimer > 0) this.eatPulseTimer -= dt;
@@ -947,12 +936,28 @@ class Player extends Amoeba {
         // Speed cap based on size
         const sizeFactor = Math.pow(PLAYER_RADII[1] / this.radius, CONFIG.PLAYER_SPEED_SIZE_EXPONENT);
         let currentMaxSpeed = CONFIG.PLAYER_MAX_SPEED * sizeFactor;
-        if (this.isDashing) currentMaxSpeed *= 2.5;
         if (this.speedBurstTimer > 0) currentMaxSpeed *= TUNING.eatSpeedBoost;
-        const speed = sqrt(this.vx * this.vx + this.vy * this.vy);
-        if (speed > currentMaxSpeed) {
-            this.vx = (this.vx / speed) * currentMaxSpeed;
-            this.vy = (this.vy / speed) * currentMaxSpeed;
+
+        if (this.isDashing) {
+            // Dash overrides: maintain high velocity with gentle decay (dash sets velocity directly)
+            this.vx *= CONFIG.PLAYER_DASH_FRICTION;
+            this.vy *= CONFIG.PLAYER_DASH_FRICTION;
+            const dashMax = currentMaxSpeed * 2.5;
+            const spd = sqrt(this.vx * this.vx + this.vy * this.vy);
+            if (spd > dashMax) {
+                this.vx = (this.vx / spd) * dashMax;
+                this.vy = (this.vy / spd) * dashMax;
+            }
+        } else {
+            // Target velocity model: tilt → target velocity, current lerps toward it with exponential smoothing.
+            // Frame-rate independent: at rate=R, half-life ≈ ln(2)/R seconds.
+            const tiltMag = sqrt(moveX * moveX + moveY * moveY);
+            const clampedMag = tiltMag > 1 ? 1 : tiltMag;
+            const targetVx = (tiltMag > 0 ? moveX / tiltMag : 0) * currentMaxSpeed * clampedMag;
+            const targetVy = (tiltMag > 0 ? moveY / tiltMag : 0) * currentMaxSpeed * clampedMag;
+            const t = 1 - Math.exp(-CONFIG.PLAYER_RESPONSIVENESS * dt);
+            this.vx = lerp(this.vx, targetVx, t);
+            this.vy = lerp(this.vy, targetVy, t);
         }
 
         // Position
@@ -966,7 +971,8 @@ class Player extends Amoeba {
         this.updateRadius();
 
         // Trail
-        if (speed > 20) {
+        const trailSpeed = sqrt(this.vx * this.vx + this.vy * this.vy);
+        if (trailSpeed > 20) {
             this.trail.push({ x: this.x, y: this.y, r: this.radius * 0.4, life: 0.25 });
             if (this.trail.length > 15) this.trail.shift();
         }
@@ -2880,10 +2886,10 @@ requestAnimationFrame(gameLoop);
 
     // Player
     const secPlayer = makeSection('Player', false);
-    secPlayer.appendChild(makeSlider('Accel', CONFIG.PLAYER_ACCELERATION, 200, 3000, 50, v => CONFIG.PLAYER_ACCELERATION = v));
-    secPlayer.appendChild(makeSlider('Friction', CONFIG.PLAYER_FRICTION, 0.70, 0.99, 0.01, v => CONFIG.PLAYER_FRICTION = v));
+    secPlayer.appendChild(makeSlider('Responsiveness', CONFIG.PLAYER_RESPONSIVENESS, 1, 20, 0.5, v => CONFIG.PLAYER_RESPONSIVENESS = v));
     secPlayer.appendChild(makeSlider('Max Speed', CONFIG.PLAYER_MAX_SPEED, 100, 600, 10, v => CONFIG.PLAYER_MAX_SPEED = v));
-    secPlayer.appendChild(makeSlider('Size Exp', CONFIG.PLAYER_SPEED_SIZE_EXPONENT, 0, 0.50, 0.05, v => CONFIG.PLAYER_SPEED_SIZE_EXPONENT = v));
+    secPlayer.appendChild(makeSlider('Size Exp', CONFIG.PLAYER_SPEED_SIZE_EXPONENT, -0.50, 0.50, 0.05, v => CONFIG.PLAYER_SPEED_SIZE_EXPONENT = v));
+    secPlayer.appendChild(makeSlider('Dash Friction', CONFIG.PLAYER_DASH_FRICTION, 0.80, 0.99, 0.01, v => CONFIG.PLAYER_DASH_FRICTION = v));
     panel.appendChild(secPlayer);
 
     // Enemy Global
@@ -2965,10 +2971,10 @@ requestAnimationFrame(gameLoop);
     btnCopy.addEventListener('click', () => {
         const cfg = {
             CONFIG: {
-                PLAYER_ACCELERATION: CONFIG.PLAYER_ACCELERATION,
-                PLAYER_FRICTION: CONFIG.PLAYER_FRICTION,
+                PLAYER_RESPONSIVENESS: CONFIG.PLAYER_RESPONSIVENESS,
                 PLAYER_MAX_SPEED: CONFIG.PLAYER_MAX_SPEED,
                 PLAYER_SPEED_SIZE_EXPONENT: CONFIG.PLAYER_SPEED_SIZE_EXPONENT,
+                PLAYER_DASH_FRICTION: CONFIG.PLAYER_DASH_FRICTION,
                 BASE_DISH_RADIUS: CONFIG.BASE_DISH_RADIUS,
                 DISH_GROWTH_PER_LEVEL: CONFIG.DISH_GROWTH_PER_LEVEL,
                 SPAWN_INTERVAL: CONFIG.SPAWN_INTERVAL,
